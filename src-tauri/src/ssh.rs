@@ -6,7 +6,7 @@ use tokio::sync::{mpsc, Mutex};
 
 // ---- SSH Client Handler ----
 
-struct ClientHandler;
+pub(crate) struct ClientHandler;
 
 impl client::Handler for ClientHandler {
     type Error = anyhow::Error;
@@ -35,12 +35,15 @@ enum SshCommand {
 
 pub struct SshState {
     cmd_tx: Mutex<Option<mpsc::UnboundedSender<SshCommand>>>,
+    // 保存连接凭据，供 SFTP 等操作复用
+    pub(crate) credentials: Mutex<Option<(String, u16, String, String)>>,
 }
 
 impl SshState {
     pub fn new() -> Self {
         Self {
             cmd_tx: Mutex::new(None),
+            credentials: Mutex::new(None),
         }
     }
 }
@@ -114,6 +117,13 @@ pub async fn connect(
     // 创建命令通道
     let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<SshCommand>();
     *state.cmd_tx.lock().await = Some(cmd_tx);
+    // 保存连接凭据，供 SFTP 等操作使用
+    *state.credentials.lock().await = Some((
+        host.to_owned(),
+        port,
+        username.to_owned(),
+        password.to_owned(),
+    ));
 
     // 启动 IO 循环
     tokio::spawn(async move {

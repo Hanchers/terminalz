@@ -1,8 +1,10 @@
 mod db;
 mod ssh;
+mod sftp;
 
 use db::{ConnectionConfig, DbState};
 use ssh::SshState;
+use sftp::UploadResult;
 use tauri::Manager;
 
 // ---- SSH 命令 ----
@@ -47,6 +49,28 @@ async fn ssh_disconnect(
     ssh::disconnect(&state).await.map_err(|e| e.to_string())
 }
 
+// ---- SFTP 命令 ----
+
+#[tauri::command]
+async fn sftp_upload(
+    state: tauri::State<'_, SshState>,
+    app_handle: tauri::AppHandle,
+    local_paths: Vec<String>,
+    remote_dir: String,
+) -> Result<UploadResult, String> {
+    // 获取已保存的凭据
+    let credentials = state
+        .credentials
+        .lock()
+        .await
+        .clone()
+        .ok_or_else(|| "请先建立 SSH 连接".to_string())?;
+
+    sftp::upload_files(&credentials, local_paths, remote_dir, &app_handle)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 // ---- 数据库命令 ----
 
 #[tauri::command]
@@ -73,6 +97,7 @@ fn delete_connection(db: tauri::State<'_, DbState>, id: i64) -> Result<(), Strin
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let app_handle = app.handle();
             let db_path = app_handle
@@ -90,6 +115,7 @@ pub fn run() {
             ssh_write,
             ssh_resize,
             ssh_disconnect,
+            sftp_upload,
             list_connections,
             save_connection,
             delete_connection,

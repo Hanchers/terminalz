@@ -3,6 +3,10 @@
   "description": "Default capability",
   "windows": ["main"],
   "permissions": [
-    "core:default"
+    "core:default",
+    "dialog:default",
+    "dialog:allow-open",
+    "dialog:allow-message",
+    "dialog:allow-ask"
   ]
 }

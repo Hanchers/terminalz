@@ -59,10 +59,21 @@
     <!-- 终端 -->
     <div ref="termContainer" class="term-container"></div>
 
-    <!-- 断开按钮 -->
-    <button v-if="connected" @click="disconnect" class="disconnect-btn">
-      断开连接
-    </button>
+    <!-- 工具栏 -->
+    <div v-if="connected" class="toolbar">
+      <button @click="showFileTransfer = true" class="upload-btn" title="Upload Files">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+          <path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/>
+        </svg>
+        Upload
+      </button>
+      <button @click="disconnect" class="disconnect-btn">
+        断开连接
+      </button>
+    </div>
+
+    <!-- 文件传输面板 -->
+    <FileTransfer v-if="showFileTransfer" @close="showFileTransfer = false" />
   </div>
 </template>
 
@@ -73,6 +84,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import '@xterm/xterm/css/xterm.css';
+import FileTransfer from './FileTransfer.vue';
 
 const connected = ref(false);
 const connecting = ref(false);
@@ -85,6 +97,7 @@ const password = ref('');
 const termContainer = ref(null);
 const savedList = ref([]);
 const editingId = ref(0);
+const showFileTransfer = ref(false);
 
 let term = null;
 let fitAddon = null;
@@ -450,16 +463,38 @@ button:disabled {
   padding: 4px;
 }
 
-/* ---- 断开按钮 ---- */
-.disconnect-btn {
+/* ---- 工具栏 ---- */
+.toolbar {
   position: absolute;
-  top: 8px;
+  top: 6px;
   right: 10px;
-  width: auto;
+  display: flex;
+  gap: 8px;
+  z-index: 10;
+}
+
+.upload-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  background: #0e639c;
+  border: none;
+  border-radius: 4px;
+  color: white;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.upload-btn:hover {
+  background: #1177bb;
+}
+
+.disconnect-btn {
   padding: 5px 14px;
   background: #c50f1f;
   font-size: 12px;
-  z-index: 10;
   border-radius: 4px;
   border: none;
   color: white;
