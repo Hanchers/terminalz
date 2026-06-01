@@ -5,7 +5,7 @@ mod sysinfo;
 
 use db::{ConnectionConfig, DbState};
 use ssh::SshState;
-use sftp::UploadResult;
+use sftp::{FileEntry, UploadResult};
 use sysinfo::SystemInfo;
 use tauri::Manager;
 
@@ -54,6 +54,89 @@ async fn ssh_disconnect(
 // ---- SFTP 命令 ----
 
 #[tauri::command]
+async fn sftp_list_dir(
+    state: tauri::State<'_, SshState>,
+    remote_path: String,
+) -> Result<Vec<FileEntry>, String> {
+    let credentials = state
+        .credentials
+        .lock()
+        .await
+        .clone()
+        .ok_or_else(|| "请先建立 SSH 连接".to_string())?;
+    sftp::list_dir(&credentials, &remote_path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn sftp_delete(
+    state: tauri::State<'_, SshState>,
+    remote_path: String,
+) -> Result<(), String> {
+    let credentials = state
+        .credentials
+        .lock()
+        .await
+        .clone()
+        .ok_or_else(|| "请先建立 SSH 连接".to_string())?;
+    sftp::delete_path(&credentials, &remote_path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn sftp_rename(
+    state: tauri::State<'_, SshState>,
+    old_path: String,
+    new_path: String,
+) -> Result<(), String> {
+    let credentials = state
+        .credentials
+        .lock()
+        .await
+        .clone()
+        .ok_or_else(|| "请先建立 SSH 连接".to_string())?;
+    sftp::rename_path(&credentials, &old_path, &new_path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn sftp_mkdir(
+    state: tauri::State<'_, SshState>,
+    remote_path: String,
+) -> Result<(), String> {
+    let credentials = state
+        .credentials
+        .lock()
+        .await
+        .clone()
+        .ok_or_else(|| "请先建立 SSH 连接".to_string())?;
+    sftp::create_dir(&credentials, &remote_path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn sftp_download(
+    state: tauri::State<'_, SshState>,
+    app_handle: tauri::AppHandle,
+    remote_path: String,
+    local_path: String,
+) -> Result<(), String> {
+    let credentials = state
+        .credentials
+        .lock()
+        .await
+        .clone()
+        .ok_or_else(|| "请先建立 SSH 连接".to_string())?;
+    sftp::download_file(&credentials, &remote_path, &local_path, &app_handle)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 async fn sftp_upload(
     state: tauri::State<'_, SshState>,
     app_handle: tauri::AppHandle,
@@ -89,6 +172,37 @@ async fn sys_info(
     sysinfo::get_system_info(&credentials)
         .await
         .map_err(|e| e.to_string())
+}
+
+// ---- 本地文件系统命令 ----
+
+#[tauri::command]
+fn read_local_dir(path: String) -> Result<Vec<FileEntry>, String> {
+    let entries = std::fs::read_dir(&path).map_err(|e| e.to_string())?;
+    let mut files: Vec<FileEntry> = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let meta = entry.metadata().map_err(|e| e.to_string())?;
+        let modified = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
+            .to_string();
+        files.push(FileEntry {
+            name: entry.file_name().to_string_lossy().to_string(),
+            is_dir: meta.is_dir(),
+            size: meta.len(),
+            modified,
+        });
+    }
+    files.sort_by(|a, b| {
+        b.is_dir
+            .cmp(&a.is_dir)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+    Ok(files)
 }
 
 // ---- 数据库命令 ----
@@ -135,8 +249,14 @@ pub fn run() {
             ssh_write,
             ssh_resize,
             ssh_disconnect,
+            sftp_list_dir,
+            sftp_delete,
+            sftp_rename,
+            sftp_mkdir,
+            sftp_download,
             sftp_upload,
             sys_info,
+            read_local_dir,
             list_connections,
             save_connection,
             delete_connection,

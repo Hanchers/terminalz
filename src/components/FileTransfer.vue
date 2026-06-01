@@ -1,433 +1,481 @@
 <template>
   <div class="ft-overlay" @click.self="$emit('close')">
     <div class="ft-panel">
-      <div class="ft-header">
-        <h3>File Upload</h3>
+      <!-- 标题栏 -->
+      <div class="ft-titlebar">
+        <span class="ft-title">SFTP File Manager</span>
         <button class="ft-close-btn" @click="$emit('close')">&times;</button>
       </div>
 
-      <!-- 文件选择区 -->
-      <div class="ft-select-area">
-        <button class="ft-select-btn" @click="pickFiles" :disabled="uploading">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-            <path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/>
-          </svg>
-          Select Files
-        </button>
-        <button
-          class="ft-upload-btn"
-          @click="startUpload"
-          :disabled="selectedFiles.length === 0 || uploading"
-        >
-          {{ uploading ? 'Uploading...' : `Upload (${selectedFiles.length})` }}
-        </button>
-      </div>
-
-      <!-- 远程路径输入 -->
-      <div class="ft-remote-path">
-        <input
-          v-model="remoteDir"
-          placeholder="Remote directory (e.g. /home/user/)"
-          class="ft-path-input"
-          :disabled="uploading"
-        />
-      </div>
-
-      <!-- 文件列表 & 进度 -->
-      <div v-if="selectedFiles.length > 0" class="ft-file-list">
-        <div v-for="(file, idx) in selectedFiles" :key="idx" class="ft-file-item">
-          <div class="ft-file-info">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" class="ft-file-icon">
-              <path d="M6 2c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6H6zm7 7V3.5L18.5 9H13z"/>
-            </svg>
-            <span class="ft-file-name" :title="file.name">{{ file.name }}</span>
-            <span class="ft-file-size">{{ formatSize(file.size) }}</span>
-            <span v-if="file.status === 'completed'" class="ft-status done">✓</span>
-            <span v-else-if="file.status === 'error'" class="ft-status err">✗</span>
-            <span v-else-if="file.status === 'uploading'" class="ft-status uploading">↻</span>
+      <div class="ft-body">
+        <!-- ===== 左侧：本地文件系统 ===== -->
+        <div class="ft-column">
+          <div class="ft-col-header">
+            <span class="ft-col-title">Local</span>
+            <div class="ft-col-actions">
+              <button class="ft-action-btn" @click="refreshLocal" title="Refresh">↻</button>
+              <!-- Actions 下拉 -->
+              <div class="ft-dropdown" ref="localDropdownEl">
+                <button class="ft-action-btn" @click="toggleDropdown('local')">Actions ▾</button>
+                <div v-if="openDropdown === 'local'" class="ft-dropdown-menu">
+                  <div class="ft-dropdown-item" @click="promptNewDir('local')">New Folder</div>
+                </div>
+              </div>
+            </div>
           </div>
-          <div class="ft-progress-track">
-            <div
-              class="ft-progress-fill"
-              :class="{
-                completed: file.status === 'completed',
-                error: file.status === 'error',
-              }"
-              :style="{ width: file.progress + '%' }"
-            ></div>
+          <!-- 路径面包屑 -->
+          <div class="ft-path-bar">
+            <button class="ft-path-up" @click="navUp('local')" title="Up">↑</button>
+            <input
+              class="ft-path-input"
+              v-model="localPath"
+              @keyup.enter="loadLocal(localPath)"
+              spellcheck="false"
+            />
           </div>
-        </div>
-      </div>
-
-      <!-- 整体进度 -->
-      <div v-if="selectedFiles.length > 0" class="ft-overall">
-        <div class="ft-overall-info">
-          <span>Overall Progress</span>
-          <span class="ft-overall-pct">{{ overallProgress }}%</span>
-        </div>
-        <div class="ft-progress-track overall-track">
+          <!-- 文件列表 -->
           <div
-            class="ft-progress-fill"
-            :style="{ width: overallProgress + '%' }"
-          ></div>
+            class="ft-file-list"
+            @click="closeDropdown"
+            @contextmenu.prevent="onContextMenu($event, 'local')"
+            @dragover.prevent
+            @drop.prevent="onDrop('local', $event)"
+          >
+            <div class="ft-list-header">
+              <span class="ft-col-name">Name</span>
+              <span class="ft-col-size">Size</span>
+            </div>
+            <div v-if="localFiles.length === 0" class="ft-empty">Empty</div>
+            <div
+              v-for="f in localFiles"
+              :key="f.name"
+              class="ft-row"
+              :class="{ selected: isSelected('local', f.name) }"
+              :draggable="!f.is_dir"
+              @click="onClick('local', f)"
+              @dblclick="onDblClick('local', f)"
+              @contextmenu.stop.prevent="onRowContext($event, 'local', f)"
+              @dragstart="onDragStart($event, 'local', f.name)"
+            >
+              <span class="ft-row-name">
+                <span class="ft-icon">{{ f.is_dir ? '📁' : '📄' }}</span>
+                {{ f.name }}
+              </span>
+              <span class="ft-row-size">{{ f.is_dir ? '--' : formatSize(f.size) }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== 右侧：远程文件系统 ===== -->
+        <div class="ft-column">
+          <div class="ft-col-header">
+            <span class="ft-col-title">Remote</span>
+            <div class="ft-col-actions">
+              <button class="ft-action-btn" @click="refreshRemote" title="Refresh">↻</button>
+              <div class="ft-dropdown" ref="remoteDropdownEl">
+                <button class="ft-action-btn" @click="toggleDropdown('remote')">Actions ▾</button>
+                <div v-if="openDropdown === 'remote'" class="ft-dropdown-menu">
+                  <div class="ft-dropdown-item" @click="promptNewDir('remote')">New Folder</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- 路径面包屑 -->
+          <div class="ft-path-bar">
+            <button class="ft-path-up" @click="navUp('remote')" title="Up">↑</button>
+            <input
+              class="ft-path-input"
+              v-model="remotePath"
+              @keyup.enter="loadRemote(remotePath)"
+              spellcheck="false"
+            />
+          </div>
+          <!-- 文件列表 -->
+          <div
+            class="ft-file-list"
+            @click="closeDropdown"
+            @contextmenu.prevent="onContextMenu($event, 'remote')"
+            @dragover.prevent
+            @drop.prevent="onDrop('remote', $event)"
+          >
+            <div class="ft-list-header">
+              <span class="ft-col-name">Name</span>
+              <span class="ft-col-size">Size</span>
+            </div>
+            <div v-if="remoteFiles.length === 0" class="ft-empty">Empty</div>
+            <div
+              v-for="f in remoteFiles"
+              :key="f.name"
+              class="ft-row"
+              :class="{ selected: isSelected('remote', f.name) }"
+              :draggable="!f.is_dir"
+              @click="onClick('remote', f)"
+              @dblclick="onDblClick('remote', f)"
+              @contextmenu.stop.prevent="onRowContext($event, 'remote', f)"
+              @dragstart="onDragStart($event, 'remote', f.name)"
+            >
+              <span class="ft-row-name">
+                <span class="ft-icon">{{ f.is_dir ? '📁' : '📄' }}</span>
+                {{ f.name }}
+              </span>
+              <span class="ft-row-size">{{ f.is_dir ? '--' : formatSize(f.size) }}</span>
+            </div>
+          </div>
         </div>
       </div>
 
-      <p v-if="resultMsg" class="ft-result" :class="{ error: hasError }">{{ resultMsg }}</p>
+      <!-- 上下文菜单 -->
+      <div
+        v-if="ctxMenu.visible"
+        class="ft-context-menu"
+        :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
+      >
+        <template v-if="ctxMenu.side === 'local'">
+          <div class="ctx-item" @click="uploadSelected">⬆ Upload to Remote</div>
+        </template>
+        <template v-else>
+          <div class="ctx-item" @click="downloadSelected">⬇ Download to Local</div>
+          <div class="ctx-sep"></div>
+          <div class="ctx-item" @click="promptRename">✎ Rename</div>
+          <div class="ctx-item ctx-danger" @click="deleteRemote">✕ Delete</div>
+          <div class="ctx-sep"></div>
+          <div class="ctx-item" @click="promptNewDir('remote')">+ New Folder</div>
+          <div class="ctx-item" @click="refreshRemote">↻ Refresh</div>
+        </template>
+      </div>
+
+      <!-- 进度条 -->
+      <div v-if="progressMsg" class="ft-progress-bar">
+        <span class="ft-progress-text">{{ progressMsg }}</span>
+        <div class="ft-progress-inner">
+          <div class="ft-progress-fill" :style="{ width: progressPct + '%' }"></div>
+        </div>
+      </div>
+
+      <!-- 状态栏 -->
+      <div class="ft-statusbar">{{ statusMsg }}</div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onUnmounted } from 'vue'
+import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import { open } from '@tauri-apps/plugin-dialog'
 
 const emit = defineEmits(['close'])
 
-const remoteDir = ref('/home/')
-const uploading = ref(false)
-const resultMsg = ref('')
-const hasError = ref(false)
+// ---- 状态 ----
+const localPath = ref('/Users')
+const remotePath = ref('/')
+const localFiles = ref([])
+const remoteFiles = ref([])
+const statusMsg = ref('')
+const progressMsg = ref('')
+const progressPct = ref(0)
+const openDropdown = ref(null)
 let unlisten = null
 
-// 文件状态: { name, size, path, progress, status, current, total }
-const selectedFiles = ref([])
+// 选择状态
+const selected = reactive({ local: null, remote: null })
 
-const overallProgress = computed(() => {
-  if (selectedFiles.value.length === 0) return 0
-  const sum = selectedFiles.value.reduce((acc, f) => acc + f.progress, 0)
-  return +(sum / selectedFiles.value.length).toFixed(1)
+// 上下文菜单
+const ctxMenu = reactive({ visible: false, x: 0, y: 0, side: '', file: null })
+
+// ---- 初始化 ----
+onMounted(async () => {
+  loadLocal(localPath.value)
+  loadRemote(remotePath.value)
+  // 监听传输进度
+  unlisten = await listen('sftp-progress', (e) => {
+    progressPct.value = Math.round(e.payload.percentage)
+    progressMsg.value = `${e.payload.file_name}: ${e.payload.status} (${progressPct.value}%)`
+    if (e.payload.status === 'completed' || e.payload.status === 'error') {
+      setTimeout(() => { progressMsg.value = '' }, 2000)
+    }
+  })
+  // 窗口点击关闭菜单
+  window.addEventListener('click', closeCtxMenu)
 })
-
-async function pickFiles() {
-  const files = await open({
-    multiple: true,
-    title: 'Select files to upload',
-  })
-
-  if (!files) return
-  const paths = Array.isArray(files) ? files : [files]
-
-  for (const filePath of paths) {
-    // 避免重复
-    if (selectedFiles.value.some(f => f.path === filePath)) continue
-    const name = filePath.split(/[/\\]/).pop() || filePath
-    selectedFiles.value.push({
-      name,
-      path: filePath,
-      size: 0,
-      progress: 0,
-      current: 0,
-      total: 0,
-      status: 'pending', // pending | uploading | completed | error
-    })
-  }
-  resultMsg.value = ''
-  hasError.value = false
-}
-
-async function startUpload() {
-  if (selectedFiles.value.length === 0) return
-  uploading.value = true
-  resultMsg.value = ''
-  hasError.value = false
-
-  // 监听上传进度事件
-  unlisten = await listen('sftp-progress', (event) => {
-    const { file_name, current, total, percentage, status } = event.payload
-    const file = selectedFiles.value.find(f => f.name === file_name)
-    if (!file) return
-
-    file.progress = Math.round(percentage * 10) / 10
-    file.current = current
-    file.total = total
-    file.status = status
-  })
-
-  try {
-    const paths = selectedFiles.value.map(f => f.path)
-    const result = await invoke('sftp_upload', {
-      localPaths: paths,
-      remoteDir: remoteDir.value,
-    })
-
-    const successCount = result.success.length
-    const failCount = result.failed.length
-    if (failCount > 0) {
-      hasError.value = true
-      resultMsg.value = `Uploaded: ${successCount} succeeded, ${failCount} failed`
-    } else {
-      resultMsg.value = `All ${successCount} file(s) uploaded successfully!`
-    }
-  } catch (e) {
-    hasError.value = true
-    resultMsg.value = 'Upload failed: ' + e
-  } finally {
-    uploading.value = false
-    if (unlisten) {
-      unlisten()
-      unlisten = null
-    }
-  }
-}
-
-function formatSize(bytes) {
-  if (bytes === 0) return '0 B'
-  const units = ['B', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(bytes) / Math.log(1024))
-  if (i === 0) return bytes + ' B'
-  return (bytes / Math.pow(1024, i)).toFixed(1) + ' ' + units[i]
-}
 
 onUnmounted(() => {
   if (unlisten) unlisten()
+  window.removeEventListener('click', closeCtxMenu)
 })
+
+// ---- 数据加载 ----
+async function loadLocal(dir) {
+  try {
+    localFiles.value = await invoke('read_local_dir', { path: dir })
+    localPath.value = dir
+    statusMsg.value = ''
+  } catch (e) {
+    statusMsg.value = 'Local error: ' + e
+    localFiles.value = []
+  }
+}
+
+async function loadRemote(dir) {
+  try {
+    remoteFiles.value = await invoke('sftp_list_dir', { remotePath: dir })
+    remotePath.value = dir
+    statusMsg.value = ''
+  } catch (e) {
+    statusMsg.value = 'Remote error: ' + e
+    remoteFiles.value = []
+  }
+}
+
+function refreshLocal() { loadLocal(localPath.value) }
+function refreshRemote() { loadRemote(remotePath.value) }
+
+function navUp(side) {
+  if (side === 'local') {
+    const p = localPath.value.replace(/\/+$/, '').split('/').slice(0, -1).join('/') || '/'
+    loadLocal(p)
+  } else {
+    const p = remotePath.value.replace(/\/+$/, '').split('/').slice(0, -1).join('/') || '/'
+    loadRemote(p)
+  }
+}
+
+// ---- 点击 / 双击 ----
+function onClick(side, file) {
+  selected[side] = file.name
+}
+
+function isSelected(side, name) {
+  return selected[side] === name
+}
+
+function onDblClick(side, file) {
+  if (!file.is_dir) return
+  if (side === 'local') {
+    loadLocal(localPath.value.replace(/\/+$/, '') + '/' + file.name)
+  } else {
+    loadRemote(remotePath.value.replace(/\/+$/, '') + '/' + file.name)
+  }
+}
+
+// ---- 拖拽 ----
+function onDragStart(e, side, name) {
+  e.dataTransfer.setData('text/plain', JSON.stringify({ side, name }))
+  e.dataTransfer.effectAllowed = 'move'
+}
+
+async function onDrop(targetSide, e) {
+  let data
+  try { data = JSON.parse(e.dataTransfer.getData('text/plain')) } catch (_) { return }
+  if (!data || data.side === targetSide) return // 不能同侧拖放
+
+  if (data.side === 'local' && targetSide === 'remote') {
+    // 上传: 本地 → 远程
+    const localFull = localPath.value.replace(/\/+$/, '') + '/' + data.name
+    await uploadFile(localFull)
+    refreshRemote()
+  } else if (data.side === 'remote' && targetSide === 'local') {
+    // 下载: 远程 → 本地
+    const remoteFull = remotePath.value.replace(/\/+$/, '') + '/' + data.name
+    await downloadFile(remoteFull)
+    refreshLocal()
+  }
+  closeCtxMenu()
+}
+
+// ---- 上传 / 下载 ----
+async function uploadFile(localFull) {
+  progressMsg.value = 'Uploading...'
+  try {
+    await invoke('sftp_upload', {
+      localPaths: [localFull],
+      remoteDir: remotePath.value,
+    })
+    statusMsg.value = 'Upload done'
+  } catch (e) {
+    statusMsg.value = 'Upload failed: ' + e
+  }
+}
+
+async function downloadFile(remoteFull) {
+  const name = remoteFull.split('/').pop() || 'download'
+  const localFull = localPath.value.replace(/\/+$/, '') + '/' + name
+  progressMsg.value = 'Downloading...'
+  try {
+    await invoke('sftp_download', {
+      remotePath: remoteFull,
+      localPath: localFull,
+    })
+    statusMsg.value = 'Download done'
+  } catch (e) {
+    statusMsg.value = 'Download failed: ' + e
+  }
+}
+
+function uploadSelected() {
+  if (!selected.local) return
+  const localFull = localPath.value.replace(/\/+$/, '') + '/' + selected.local
+  uploadFile(localFull).then(() => refreshRemote())
+  closeCtxMenu()
+}
+
+function downloadSelected() {
+  if (!selected.remote) return
+  const remoteFull = remotePath.value.replace(/\/+$/, '') + '/' + selected.remote
+  downloadFile(remoteFull).then(() => refreshLocal())
+  closeCtxMenu()
+}
+
+// ---- 删除 ----
+async function deleteRemote() {
+  if (!selected.remote) return
+  const full = remotePath.value.replace(/\/+$/, '') + '/' + selected.remote
+  if (!confirm(`Delete ${full}?`)) return
+  try {
+    await invoke('sftp_delete', { remotePath: full })
+    statusMsg.value = 'Deleted'
+    refreshRemote()
+  } catch (e) {
+    statusMsg.value = 'Delete failed: ' + e
+  }
+  closeCtxMenu()
+}
+
+// ---- 重命名 ----
+async function promptRename() {
+  if (!selected.remote) return
+  const oldName = selected.remote
+  const newName = prompt('New name:', oldName)
+  if (!newName || newName === oldName) { closeCtxMenu(); return }
+  const oldFull = remotePath.value.replace(/\/+$/, '') + '/' + oldName
+  const newFull = remotePath.value.replace(/\/+$/, '') + '/' + newName
+  try {
+    await invoke('sftp_rename', { oldPath: oldFull, newPath: newFull })
+    statusMsg.value = 'Renamed'
+    refreshRemote()
+  } catch (e) {
+    statusMsg.value = 'Rename failed: ' + e
+  }
+  closeCtxMenu()
+}
+
+// ---- 新建目录 ----
+async function promptNewDir(side) {
+  closeDropdown()
+  const dirName = prompt('Folder name:')
+  if (!dirName) return
+
+  if (side === 'local') {
+    // 本地目录：暂无后端 API，提示用系统文件管理器
+    statusMsg.value = 'Local mkdir not supported via SFTP, use system file manager'
+    closeCtxMenu()
+    return
+  } else {
+    const full = remotePath.value.replace(/\/+$/, '') + '/' + dirName
+    try {
+      await invoke('sftp_mkdir', { remotePath: full })
+      statusMsg.value = 'Folder created'
+      refreshRemote()
+    } catch (e) {
+      statusMsg.value = 'Mkdir failed: ' + e
+    }
+  }
+  closeCtxMenu()
+}
+
+// ---- 右键菜单 ----
+function onContextMenu(e, side) {
+  // 空白区域右键
+  ctxMenu.visible = true
+  ctxMenu.x = e.clientX
+  ctxMenu.y = e.clientY
+  ctxMenu.side = side
+  ctxMenu.file = null
+}
+
+function onRowContext(e, side, file) {
+  selected[side] = file.name
+  ctxMenu.visible = true
+  ctxMenu.x = e.clientX
+  ctxMenu.y = e.clientY
+  ctxMenu.side = side
+  ctxMenu.file = file
+}
+
+function closeCtxMenu() {
+  ctxMenu.visible = false
+}
+
+// ---- 下拉菜单 ----
+function toggleDropdown(name) {
+  openDropdown.value = openDropdown.value === name ? null : name
+}
+
+function closeDropdown() {
+  openDropdown.value = null
+}
+
+// ---- 工具函数 ----
+function formatSize(bytes) {
+  if (!bytes || bytes === 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.floor(Math.log(bytes) / Math.log(1024))
+  return (bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1) + ' ' + units[i]
+}
 </script>
 
 <style scoped>
-.ft-overlay {
-  position: fixed;
-  inset: 0;
-  background: var(--shadow-overlay);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-}
+/* 遮罩 */
+.ft-overlay { position: fixed; inset: 0; z-index: 100; background: var(--shadow-overlay); display: flex; align-items: center; justify-content: center; }
+.ft-panel { width: 90vw; height: 85vh; max-width: 1200px; background: var(--color-bg-panel); border: 1px solid var(--color-border-primary); border-radius: 10px; display: flex; flex-direction: column; overflow: hidden; box-shadow: var(--shadow-panel); }
+.ft-titlebar { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; border-bottom: 1px solid var(--color-border-primary); flex-shrink: 0; }
+.ft-title { font-size: 14px; font-weight: 600; color: var(--color-text-primary); }
+.ft-close-btn { width: 30px; height: 30px; background: transparent; border: none; border-radius: 6px; color: var(--color-text-secondary); font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.ft-close-btn:hover { background: var(--color-bg-hover-alt); color: var(--color-text-primary); }
 
-.ft-panel {
-  width: 520px;
-  max-height: 80vh;
-  background: var(--color-bg-panel);
-  border: 1px solid var(--color-border-primary);
-  border-radius: 12px;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  box-shadow: var(--shadow-panel);
-}
+.ft-body { flex: 1; display: flex; overflow: hidden; }
+.ft-column { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+.ft-column:first-child { border-right: 1px solid var(--color-border-primary); }
 
-.ft-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--color-border-secondary);
-}
+.ft-col-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--color-border-secondary); flex-shrink: 0; }
+.ft-col-title { font-size: 12px; font-weight: 600; color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
+.ft-col-actions { display: flex; gap: 4px; }
+.ft-action-btn { padding: 3px 8px; font-size: 11px; background: transparent; border: 1px solid var(--color-border-secondary); border-radius: 4px; color: var(--color-text-secondary); cursor: pointer; }
+.ft-action-btn:hover { background: var(--color-bg-hover); color: var(--color-text-primary); }
 
-.ft-header h3 {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-}
+.ft-dropdown { position: relative; }
+.ft-dropdown-menu { position: absolute; right: 0; top: 100%; z-index: 20; min-width: 140px; background: var(--color-bg-panel); border: 1px solid var(--color-border-primary); border-radius: 6px; box-shadow: var(--shadow-panel); padding: 4px; }
+.ft-dropdown-item { padding: 6px 10px; font-size: 12px; color: var(--color-text-primary); border-radius: 4px; cursor: pointer; }
+.ft-dropdown-item:hover { background: var(--color-bg-hover); }
 
-.ft-close-btn {
-  width: 28px;
-  height: 28px;
-  background: transparent;
-  border: none;
-  border-radius: 6px;
-  color: var(--color-text-secondary);
-  font-size: 20px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
+.ft-path-bar { display: flex; align-items: center; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--color-border-secondary); flex-shrink: 0; }
+.ft-path-up { width: 28px; height: 28px; font-size: 14px; background: transparent; border: 1px solid var(--color-border-secondary); border-radius: 4px; color: var(--color-text-secondary); cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.ft-path-up:hover { background: var(--color-bg-hover); color: var(--color-text-primary); }
+.ft-path-input { flex: 1; padding: 5px 8px; font-size: 12px; font-family: monospace; background: var(--color-bg-input); border: 1px solid var(--color-border-primary); border-radius: 4px; color: var(--color-text-primary); outline: none; }
+.ft-path-input:focus { border-color: var(--color-accent); }
 
-.ft-close-btn:hover {
-  background: var(--color-bg-hover-alt);
-  color: var(--color-text-primary);
-}
+.ft-file-list { flex: 1; overflow-y: auto; user-select: none; }
+.ft-list-header { display: flex; padding: 5px 10px; font-size: 10px; color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--color-border-secondary); position: sticky; top: 0; background: var(--color-bg-panel); z-index: 1; }
+.ft-col-name { flex: 1; }
+.ft-col-size { width: 80px; text-align: right; flex-shrink: 0; }
+.ft-empty { padding: 32px; text-align: center; color: var(--color-text-tertiary); font-size: 12px; }
+.ft-row { display: flex; align-items: center; padding: 4px 10px; font-size: 12px; cursor: pointer; transition: background 0.1s; }
+.ft-row:hover { background: var(--color-bg-hover); }
+.ft-row.selected { background: var(--color-accent-bg); color: var(--color-text-white); }
+.ft-row-name { flex: 1; display: flex; align-items: center; gap: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ft-row-size { width: 80px; text-align: right; flex-shrink: 0; font-size: 11px; color: var(--color-text-secondary); }
+.ft-row.selected .ft-row-size { color: var(--color-accent-light); }
+.ft-icon { flex-shrink: 0; font-size: 14px; }
 
-/* 操作按钮 */
-.ft-select-area {
-  display: flex;
-  gap: 10px;
-  padding: 16px 20px 8px;
-}
+.ft-context-menu { position: fixed; z-index: 200; min-width: 160px; background: var(--color-bg-panel); border: 1px solid var(--color-border-primary); border-radius: 6px; box-shadow: var(--shadow-panel); padding: 4px; }
+.ctx-item { padding: 6px 10px; font-size: 12px; color: var(--color-text-primary); border-radius: 4px; cursor: pointer; }
+.ctx-item:hover { background: var(--color-bg-hover); }
+.ctx-danger { color: var(--color-danger); }
+.ctx-sep { height: 1px; background: var(--color-border-secondary); margin: 3px 6px; }
 
-.ft-select-btn,
-.ft-upload-btn {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 8px 16px;
-  border: 1px solid var(--color-border-primary);
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s;
-}
+.ft-progress-bar { padding: 6px 16px; border-top: 1px solid var(--color-border-secondary); display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.ft-progress-text { font-size: 11px; color: var(--color-text-secondary); white-space: nowrap; }
+.ft-progress-inner { flex: 1; height: 4px; background: var(--color-border-secondary); border-radius: 2px; overflow: hidden; }
+.ft-progress-fill { height: 100%; background: var(--color-progress); border-radius: 2px; transition: width 0.3s; }
 
-.ft-select-btn {
-  background: var(--color-bg-hover-alt);
-  color: var(--color-text-primary);
-}
-
-.ft-select-btn:hover:not(:disabled) {
-  background: var(--color-bg-active);
-}
-
-.ft-upload-btn {
-  background: var(--color-btn-upload);
-  color: var(--color-text-white);
-  border-color: var(--color-btn-upload-hover);
-}
-
-.ft-upload-btn:hover:not(:disabled) {
-  background: var(--color-btn-upload-hover);
-}
-
-.ft-upload-btn:disabled,
-.ft-select-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* 远程路径 */
-.ft-remote-path {
-  padding: 8px 20px;
-}
-
-.ft-path-input {
-  width: 100%;
-  padding: 8px 12px;
-  background: var(--color-bg-input);
-  border: 1px solid var(--color-border-primary);
-  border-radius: 6px;
-  color: var(--color-text-primary);
-  font-size: 13px;
-  outline: none;
-  box-sizing: border-box;
-}
-
-.ft-path-input:focus {
-  border-color: var(--color-accent);
-}
-
-/* 文件列表 */
-.ft-file-list {
-  padding: 8px 20px;
-  overflow-y: auto;
-  max-height: 300px;
-}
-
-.ft-file-item {
-  padding: 8px 0;
-  border-bottom: 1px solid var(--color-border-secondary);
-}
-
-.ft-file-item:last-child {
-  border-bottom: none;
-}
-
-.ft-file-info {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-
-.ft-file-icon {
-  color: var(--color-accent);
-  flex-shrink: 0;
-}
-
-.ft-file-name {
-  flex: 1;
-  font-size: 13px;
-  color: var(--color-text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.ft-file-size {
-  font-size: 11px;
-  color: var(--color-text-secondary);
-  flex-shrink: 0;
-}
-
-.ft-status {
-  font-size: 14px;
-  font-weight: bold;
-  flex-shrink: 0;
-  width: 16px;
-  text-align: center;
-}
-
-.ft-status.done { color: var(--color-success); }
-.ft-status.err { color: var(--color-danger); }
-.ft-status.uploading { color: var(--color-warning); animation: spin 1s linear infinite; }
-
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-/* 进度条 */
-.ft-progress-track {
-  width: 100%;
-  height: 6px;
-  background: var(--color-border-secondary);
-  border-radius: 3px;
-  overflow: hidden;
-}
-
-.ft-progress-fill {
-  height: 100%;
-  background: var(--color-progress);
-  border-radius: 3px;
-  transition: width 0.3s ease;
-}
-
-.ft-progress-fill.completed {
-  background: var(--color-progress-done);
-}
-
-.ft-progress-fill.error {
-  background: var(--color-progress-error);
-}
-
-/* 整体进度 */
-.ft-overall {
-  padding: 12px 20px 16px;
-  border-top: 1px solid var(--color-border-primary);
-}
-
-.ft-overall-info {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 6px;
-  font-size: 12px;
-  color: var(--color-text-secondary);
-}
-
-.ft-overall-pct {
-  font-weight: 600;
-  color: var(--color-accent);
-}
-
-.overall-track {
-  height: 8px;
-}
-
-/* 结果消息 */
-.ft-result {
-  padding: 10px 20px 16px;
-  font-size: 13px;
-  color: var(--color-success);
-  border-top: 1px solid var(--color-border-secondary);
-  margin: 0;
-}
-
-.ft-result.error {
-  color: var(--color-danger);
-}
+.ft-statusbar { padding: 4px 12px; font-size: 11px; color: var(--color-text-tertiary); border-top: 1px solid var(--color-border-secondary); flex-shrink: 0; }
 </style>
