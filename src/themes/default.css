@@ -1,0 +1,91 @@
+/* ================================================
+   TerminalZ — 默认暗色主题 (Default Dark Theme)
+   所有颜色通过 CSS 变量定义，便于主题切换
+   ================================================ */
+
+:root {
+  /* ---- 背景 Backgrounds ---- */
+  --color-bg-primary:       #1e1e1e;
+  --color-bg-panel:         #161b22;
+  --color-bg-secondary:     #252526;
+  --color-bg-input:         #0d1117;
+  --color-bg-form:          #3c3c3c;
+  --color-bg-hover:         #1c2128;
+  --color-bg-hover-alt:     #21262d;
+  --color-bg-active:        #30363d;
+
+  /* ---- 文字 Text ---- */
+  --color-text-primary:     #c9d1d9;
+  --color-text-secondary:   #8b949e;
+  --color-text-tertiary:    #484f58;
+  --color-text-white:       #ffffff;
+  --color-text-terminal:    #d4d4d4;
+  --color-text-heading:     #cccccc;
+
+  /* ---- 边框 Borders ---- */
+  --color-border-primary:   #30363d;
+  --color-border-secondary: #21262d;
+  --color-border-input:     #555555;
+  --color-border-tab:       #3e3e42;
+
+  /* ---- 强调色 Accent ---- */
+  --color-accent:           #58a6ff;
+  --color-accent-bg:        #0d419d;
+  --color-accent-light:     #7ca9ff;
+
+  /* ---- 按钮 Buttons ---- */
+  --color-btn-primary:      #007acc;
+  --color-btn-primary-hover:#005999;
+  --color-btn-save:         #3a3a3a;
+  --color-btn-save-hover:   #4a4a4a;
+  --color-btn-save-text:    #cccccc;
+  --color-btn-upload:       #238636;
+  --color-btn-upload-hover: #2ea043;
+
+  /* ---- 状态色 Status Colors ---- */
+  --color-success:          #3fb950;
+  --color-success-light:    #7ee787;
+  --color-warning:          #d29922;
+  --color-danger:           #f85149;
+  --color-danger-hover:     #da3633;
+  --color-danger-btn:       #c50f1f;
+  --color-danger-btn-hover: #a00d19;
+
+  /* ---- 进度 / 其他 Progress ---- */
+  --color-progress:         #1f6feb;
+  --color-progress-done:    #238636;
+  --color-progress-error:   #da3633;
+
+  /* ---- 阴影 Shadow ---- */
+  --shadow-panel:           0 8px 32px rgba(0, 0, 0, 0.5);
+  --shadow-overlay:         rgba(0, 0, 0, 0.6);
+
+  /* ---- 终端 Terminal ---- */
+  --terminal-bg:            #1e1e1e;
+  --terminal-fg:            #d4d4d4;
+  --terminal-cursor:        #ffffff;
+}
+
+/* ================================================
+   全局重置 & 基础样式
+   ================================================ */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app,
+#app-container {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background: var(--color-bg-primary);
+  color: var(--color-text-white);
+  font-family: monospace;
+}

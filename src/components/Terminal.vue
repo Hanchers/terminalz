@@ -1,76 +1,65 @@
 <template>
   <div class="terminal-wrapper">
+    <!-- 标签栏 -->
+    <div v-if="connected" class="tab-bar">
+      <div class="tab active">
+        <svg viewBox="0 0 24 24" width="12" height="12" fill="#3fb950">
+          <circle cx="12" cy="12" r="4"/>
+        </svg>
+        <span>{{ host }}</span>
+      </div>
+      <div class="tab-actions">
+        <button @click="showFileTransfer = true" class="tab-btn" title="Upload Files">
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
+            <path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/>
+          </svg>
+        </button>
+        <button @click="disconnect" class="tab-btn close-btn" title="Disconnect">
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
+            <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
     <!-- 连接表单覆盖层 -->
     <div v-if="!connected" class="connect-overlay">
-      <div class="overlay-content">
-        <!-- 左侧：表单 -->
-        <div class="connect-form">
-          <h2>SSH 远程连接</h2>
-          <div class="form-group">
-            <input v-model="name" placeholder="连接名称 (可选)" @keyup.enter="doConnect" />
-          </div>
-          <div class="form-group">
-            <input v-model="host" placeholder="主机地址 (例: 192.168.1.1)" @keyup.enter="doConnect" />
-            <input
-              v-model.number="port"
-              placeholder="端口"
-              type="number"
-              style="max-width: 100px"
-              @keyup.enter="doConnect"
-            />
-          </div>
-          <div class="form-group">
-            <input v-model="username" placeholder="用户名" @keyup.enter="doConnect" />
-            <input
-              v-model="password"
-              placeholder="密码"
-              type="password"
-              @keyup.enter="doConnect"
-            />
-          </div>
-          <div class="btn-row">
-            <button class="btn-connect" @click="doConnect" :disabled="connecting">
-              {{ connecting ? '连接中...' : '连接' }}
-            </button>
-            <button class="btn-save" @click="doSave" :disabled="!canSave">💾 保存</button>
-          </div>
-          <p v-if="error" class="error">{{ error }}</p>
+      <div class="connect-form">
+        <h2>SSH 远程连接</h2>
+        <div class="form-group">
+          <input v-model="name" placeholder="连接名称 (可选)" @keyup.enter="doConnect" />
         </div>
-
-        <!-- 右侧：已保存的连接 -->
-        <div v-if="savedList.length > 0" class="saved-list">
-          <h3>📋 已保存的连接</h3>
-          <div
-            v-for="item in savedList"
-            :key="item.id"
-            class="saved-item"
-            @click="loadConfig(item)"
-          >
-            <div class="saved-info">
-              <span class="saved-name">{{ item.name || item.host }}</span>
-              <span class="saved-detail">{{ item.username }}@{{ item.host }}:{{ item.port }}</span>
-            </div>
-            <button class="btn-del" @click.stop="doDelete(item.id)">✕</button>
-          </div>
+        <div class="form-group">
+          <input v-model="host" placeholder="主机地址 (例: 192.168.1.1)" @keyup.enter="doConnect" />
+          <input
+            v-model.number="port"
+            placeholder="端口"
+            type="number"
+            style="max-width: 100px"
+            @keyup.enter="doConnect"
+          />
         </div>
+        <div class="form-group">
+          <input v-model="username" placeholder="用户名" @keyup.enter="doConnect" />
+          <input
+            v-model="password"
+            placeholder="密码"
+            type="password"
+            @keyup.enter="doConnect"
+          />
+        </div>
+        <div class="btn-row">
+          <button class="btn-connect" @click="doConnect" :disabled="connecting">
+            {{ connecting ? '连接中...' : '连接' }}
+          </button>
+          <button class="btn-save" @click="doSave" :disabled="!canSave">💾 保存</button>
+        </div>
+        <p v-if="error" class="error">{{ error }}</p>
       </div>
     </div>
 
     <!-- 终端 -->
     <div ref="termContainer" class="term-container"></div>
-
-    <!-- 工具栏 -->
-    <div v-if="connected" class="toolbar">
-      <button @click="showFileTransfer = true" class="upload-btn" title="Upload Files">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
-          <path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/>
-        </svg>
-        Upload
-      </button>
-      <button @click="disconnect" class="disconnect-btn">
-        断开连接
-      </button>
-    </div>
 
     <!-- 文件传输面板 -->
     <FileTransfer v-if="showFileTransfer" @close="showFileTransfer = false" />
@@ -78,13 +67,19 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import '@xterm/xterm/css/xterm.css';
 import FileTransfer from './FileTransfer.vue';
+
+const props = defineProps({
+  prefill: { type: Object, default: null },
+})
+
+const emit = defineEmits(['connection-change'])
 
 const connected = ref(false);
 const connecting = ref(false);
@@ -95,7 +90,6 @@ const port = ref(22);
 const username = ref('');
 const password = ref('');
 const termContainer = ref(null);
-const savedList = ref([]);
 const editingId = ref(0);
 const showFileTransfer = ref(false);
 
@@ -105,11 +99,24 @@ let unlisten = null;
 
 const canSave = computed(() => host.value && username.value);
 
+// ---- 外部 prefill ---
+
+watch(() => props.prefill, (val) => {
+  if (val) {
+    name.value = val.name || '';
+    host.value = val.host || '';
+    port.value = val.port || 22;
+    username.value = val.username || '';
+    password.value = val.password || '';
+    editingId.value = val.id || 0;
+    error.value = '';
+  }
+}, { deep: true })
+
 // ---- 初始化 ----
 
-onMounted(async () => {
-  await loadSavedList();
-});
+onMounted(() => {});
+
 
 // ---- 终端操作 ----
 
@@ -118,16 +125,21 @@ function createTerminal() {
     cursorBlink: true,
     fontSize: 14,
     fontFamily: 'Menlo, Monaco, "Courier New", monospace',
-    theme: {
-      background: '#1e1e1e',
-      foreground: '#d4d4d4',
-      cursor: '#ffffff',
-    },
+    theme: readTerminalTheme(),
     allowProposedApi: true,
   });
 
   fitAddon = new FitAddon();
   term.loadAddon(fitAddon);
+}
+
+function readTerminalTheme() {
+  const style = getComputedStyle(document.documentElement);
+  return {
+    background: style.getPropertyValue('--terminal-bg').trim(),
+    foreground: style.getPropertyValue('--terminal-fg').trim(),
+    cursor:    style.getPropertyValue('--terminal-cursor').trim(),
+  };
 }
 
 function ensureTerminalOpen() {
@@ -177,6 +189,7 @@ async function doConnect() {
     });
 
     connected.value = true;
+    emit('connection-change', true);
 
     window.addEventListener('resize', () => fitAddon?.fit());
   } catch (e) {
@@ -196,27 +209,10 @@ async function disconnect() {
   try { await invoke('ssh_disconnect'); } catch (_) {}
   cleanupTerminal();
   connected.value = false;
+  emit('connection-change', false);
 }
 
 // ---- 数据库操作 ----
-
-async function loadSavedList() {
-  try {
-    savedList.value = await invoke('list_connections');
-  } catch (_) {
-    savedList.value = [];
-  }
-}
-
-function loadConfig(item) {
-  name.value = item.name || '';
-  host.value = item.host;
-  port.value = item.port;
-  username.value = item.username;
-  password.value = item.password;
-  editingId.value = item.id;
-  error.value = '';
-}
 
 async function doSave() {
   if (!canSave.value) return;
@@ -233,22 +229,8 @@ async function doSave() {
     editingId.value = saved.id;
     error.value = '已保存 ✓';
     setTimeout(() => { error.value = ''; }, 1500);
-    await loadSavedList();
   } catch (e) {
     error.value = `保存失败: ${e}`;
-  }
-}
-
-async function doDelete(id) {
-  try {
-    await invoke('delete_connection', { id });
-    if (editingId.value === id) {
-      editingId.value = 0;
-      name.value = '';
-    }
-    await loadSavedList();
-  } catch (e) {
-    error.value = `删除失败: ${e}`;
   }
 }
 
@@ -267,6 +249,61 @@ onUnmounted(() => {
   position: relative;
   display: flex;
   flex-direction: column;
+  background: var(--color-bg-primary);
+}
+
+/* ---- 标签栏 ---- */
+.tab-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 32px;
+  background: var(--color-bg-secondary);
+  border-bottom: 1px solid var(--color-border-tab);
+  padding: 0 8px;
+  flex-shrink: 0;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 12px;
+  background: var(--color-bg-primary);
+  border-radius: 4px 4px 0 0;
+  font-size: 12px;
+  color: var(--color-text-heading);
+  border: 1px solid var(--color-border-tab);
+  border-bottom: 1px solid var(--color-bg-primary);
+  margin-bottom: -1px;
+}
+
+.tab-actions {
+  display: flex;
+  gap: 2px;
+}
+
+.tab-btn {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.tab-btn:hover {
+  background: var(--color-bg-active);
+  color: var(--color-text-primary);
+}
+
+.close-btn:hover {
+  background: var(--color-danger-btn);
+  color: var(--color-text-white);
 }
 
 /* ---- 覆盖层 ---- */
@@ -277,28 +314,22 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #1e1e1e;
-}
-
-.overlay-content {
-  display: flex;
-  gap: 24px;
-  align-items: flex-start;
+  background: var(--color-bg-primary);
 }
 
 /* ---- 连接表单 ---- */
 .connect-form {
   width: 420px;
   padding: 32px;
-  background: #252526;
+  background: var(--color-bg-secondary);
   border-radius: 8px;
-  border: 1px solid #3e3e42;
+  border: 1px solid var(--color-border-tab);
 }
 
 .connect-form h2 {
   margin-bottom: 24px;
   text-align: center;
-  color: #cccccc;
+  color: var(--color-text-heading);
   font-size: 18px;
 }
 
@@ -311,17 +342,17 @@ onUnmounted(() => {
 .form-group input {
   flex: 1;
   padding: 10px 12px;
-  background: #3c3c3c;
-  border: 1px solid #555;
+  background: var(--color-bg-form);
+  border: 1px solid var(--color-border-input);
   border-radius: 4px;
-  color: #d4d4d4;
+  color: var(--color-text-terminal);
   font-size: 14px;
   outline: none;
   transition: border-color 0.2s;
 }
 
 .form-group input:focus {
-  border-color: #007acc;
+  border-color: var(--color-btn-primary);
 }
 
 input[type='number']::-webkit-inner-spin-button,
@@ -338,8 +369,8 @@ input[type='number']::-webkit-outer-spin-button {
 .btn-connect {
   flex: 1;
   padding: 10px;
-  background: #007acc;
-  color: white;
+  background: var(--color-btn-primary);
+  color: var(--color-text-white);
   border: none;
   border-radius: 4px;
   font-size: 14px;
@@ -348,15 +379,15 @@ input[type='number']::-webkit-outer-spin-button {
 }
 
 .btn-connect:hover:not(:disabled) {
-  background: #005999;
+  background: var(--color-btn-primary-hover);
 }
 
 .btn-save {
   width: auto;
   padding: 10px 16px;
-  background: #3a3a3a;
-  color: #ccc;
-  border: 1px solid #555;
+  background: var(--color-btn-save);
+  color: var(--color-btn-save-text);
+  border: 1px solid var(--color-border-input);
   border-radius: 4px;
   font-size: 13px;
   cursor: pointer;
@@ -364,7 +395,7 @@ input[type='number']::-webkit-outer-spin-button {
 }
 
 .btn-save:hover:not(:disabled) {
-  background: #4a4a4a;
+  background: var(--color-btn-save-hover);
 }
 
 button:disabled {
@@ -373,135 +404,15 @@ button:disabled {
 }
 
 .error {
-  color: #f44747;
+  color: var(--color-danger);
   margin-top: 12px;
   text-align: center;
   font-size: 13px;
 }
 
-/* ---- 已保存列表 ---- */
-.saved-list {
-  width: 280px;
-  max-height: 380px;
-  overflow-y: auto;
-  background: #252526;
-  border-radius: 8px;
-  border: 1px solid #3e3e42;
-  padding: 16px;
-}
-
-.saved-list h3 {
-  margin-bottom: 12px;
-  color: #cccccc;
-  font-size: 15px;
-}
-
-.saved-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px;
-  margin-bottom: 6px;
-  background: #2d2d30;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.saved-item:hover {
-  background: #37373d;
-}
-
-.saved-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  overflow: hidden;
-}
-
-.saved-name {
-  font-size: 13px;
-  color: #e0e0e0;
-  font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.saved-detail {
-  font-size: 11px;
-  color: #888;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.btn-del {
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  background: transparent;
-  color: #888;
-  border: none;
-  border-radius: 3px;
-  font-size: 14px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.btn-del:hover {
-  background: #c50f1f;
-  color: white;
-}
-
 /* ---- 终端容器 ---- */
 .term-container {
   flex: 1;
-  padding: 4px;
-}
-
-/* ---- 工具栏 ---- */
-.toolbar {
-  position: absolute;
-  top: 6px;
-  right: 10px;
-  display: flex;
-  gap: 8px;
-  z-index: 10;
-}
-
-.upload-btn {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 5px 12px;
-  background: #0e639c;
-  border: none;
-  border-radius: 4px;
-  color: white;
-  font-size: 12px;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.upload-btn:hover {
-  background: #1177bb;
-}
-
-.disconnect-btn {
-  padding: 5px 14px;
-  background: #c50f1f;
-  font-size: 12px;
-  border-radius: 4px;
-  border: none;
-  color: white;
-  cursor: pointer;
-}
-
-.disconnect-btn:hover {
-  background: #a00d19;
+  padding: 2px;
 }
 </style>

@@ -190,7 +190,7 @@ onUnmounted(() => {
 .ft-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--shadow-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -200,13 +200,13 @@ onUnmounted(() => {
 .ft-panel {
   width: 520px;
   max-height: 80vh;
-  background: #161b22;
-  border: 1px solid #30363d;
+  background: var(--color-bg-panel);
+  border: 1px solid var(--color-border-primary);
   border-radius: 12px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-panel);
 }
 
 .ft-header {
@@ -214,13 +214,13 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 16px 20px;
-  border-bottom: 1px solid #21262d;
+  border-bottom: 1px solid var(--color-border-secondary);
 }
 
 .ft-header h3 {
   font-size: 15px;
   font-weight: 600;
-  color: #c9d1d9;
+  color: var(--color-text-primary);
 }
 
 .ft-close-btn {
@@ -229,7 +229,7 @@ onUnmounted(() => {
   background: transparent;
   border: none;
   border-radius: 6px;
-  color: #8b949e;
+  color: var(--color-text-secondary);
   font-size: 20px;
   cursor: pointer;
   display: flex;
@@ -238,8 +238,8 @@ onUnmounted(() => {
 }
 
 .ft-close-btn:hover {
-  background: #21262d;
-  color: #c9d1d9;
+  background: var(--color-bg-hover-alt);
+  color: var(--color-text-primary);
 }
 
 /* 操作按钮 */
@@ -257,7 +257,7 @@ onUnmounted(() => {
   justify-content: center;
   gap: 6px;
   padding: 8px 16px;
-  border: 1px solid #30363d;
+  border: 1px solid var(--color-border-primary);
   border-radius: 6px;
   font-size: 13px;
   font-weight: 500;
@@ -266,22 +266,22 @@ onUnmounted(() => {
 }
 
 .ft-select-btn {
-  background: #21262d;
-  color: #c9d1d9;
+  background: var(--color-bg-hover-alt);
+  color: var(--color-text-primary);
 }
 
 .ft-select-btn:hover:not(:disabled) {
-  background: #30363d;
+  background: var(--color-bg-active);
 }
 
 .ft-upload-btn {
-  background: #238636;
-  color: #fff;
-  border-color: #2ea043;
+  background: var(--color-btn-upload);
+  color: var(--color-text-white);
+  border-color: var(--color-btn-upload-hover);
 }
 
 .ft-upload-btn:hover:not(:disabled) {
-  background: #2ea043;
+  background: var(--color-btn-upload-hover);
 }
 
 .ft-upload-btn:disabled,
@@ -298,17 +298,17 @@ onUnmounted(() => {
 .ft-path-input {
   width: 100%;
   padding: 8px 12px;
-  background: #0d1117;
-  border: 1px solid #30363d;
+  background: var(--color-bg-input);
+  border: 1px solid var(--color-border-primary);
   border-radius: 6px;
-  color: #c9d1d9;
+  color: var(--color-text-primary);
   font-size: 13px;
   outline: none;
   box-sizing: border-box;
 }
 
 .ft-path-input:focus {
-  border-color: #58a6ff;
+  border-color: var(--color-accent);
 }
 
 /* 文件列表 */
@@ -320,7 +320,7 @@ onUnmounted(() => {
 
 .ft-file-item {
   padding: 8px 0;
-  border-bottom: 1px solid #21262d;
+  border-bottom: 1px solid var(--color-border-secondary);
 }
 
 .ft-file-item:last-child {
@@ -335,14 +335,14 @@ onUnmounted(() => {
 }
 
 .ft-file-icon {
-  color: #58a6ff;
+  color: var(--color-accent);
   flex-shrink: 0;
 }
 
 .ft-file-name {
   flex: 1;
   font-size: 13px;
-  color: #c9d1d9;
+  color: var(--color-text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -350,7 +350,7 @@ onUnmounted(() => {
 
 .ft-file-size {
   font-size: 11px;
-  color: #8b949e;
+  color: var(--color-text-secondary);
   flex-shrink: 0;
 }
 
@@ -362,9 +362,9 @@ onUnmounted(() => {
   text-align: center;
 }
 
-.ft-status.done { color: #3fb950; }
-.ft-status.err { color: #f85149; }
-.ft-status.uploading { color: #d29922; animation: spin 1s linear infinite; }
+.ft-status.done { color: var(--color-success); }
+.ft-status.err { color: var(--color-danger); }
+.ft-status.uploading { color: var(--color-warning); animation: spin 1s linear infinite; }
 
 @keyframes spin {
   from { transform: rotate(0deg); }
@@ -375,30 +375,30 @@ onUnmounted(() => {
 .ft-progress-track {
   width: 100%;
   height: 6px;
-  background: #21262d;
+  background: var(--color-border-secondary);
   border-radius: 3px;
   overflow: hidden;
 }
 
 .ft-progress-fill {
   height: 100%;
-  background: #1f6feb;
+  background: var(--color-progress);
   border-radius: 3px;
   transition: width 0.3s ease;
 }
 
 .ft-progress-fill.completed {
-  background: #238636;
+  background: var(--color-progress-done);
 }
 
 .ft-progress-fill.error {
-  background: #da3633;
+  background: var(--color-progress-error);
 }
 
 /* 整体进度 */
 .ft-overall {
   padding: 12px 20px 16px;
-  border-top: 1px solid #30363d;
+  border-top: 1px solid var(--color-border-primary);
 }
 
 .ft-overall-info {
@@ -406,12 +406,12 @@ onUnmounted(() => {
   justify-content: space-between;
   margin-bottom: 6px;
   font-size: 12px;
-  color: #8b949e;
+  color: var(--color-text-secondary);
 }
 
 .ft-overall-pct {
   font-weight: 600;
-  color: #58a6ff;
+  color: var(--color-accent);
 }
 
 .overall-track {
@@ -422,12 +422,12 @@ onUnmounted(() => {
 .ft-result {
   padding: 10px 20px 16px;
   font-size: 13px;
-  color: #3fb950;
-  border-top: 1px solid #21262d;
+  color: var(--color-success);
+  border-top: 1px solid var(--color-border-secondary);
   margin: 0;
 }
 
 .ft-result.error {
-  color: #f85149;
+  color: var(--color-danger);
 }
 </style>

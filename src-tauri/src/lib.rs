@@ -1,10 +1,12 @@
 mod db;
 mod ssh;
 mod sftp;
+mod sysinfo;
 
 use db::{ConnectionConfig, DbState};
 use ssh::SshState;
 use sftp::UploadResult;
+use sysinfo::SystemInfo;
 use tauri::Manager;
 
 // ---- SSH 命令 ----
@@ -71,6 +73,24 @@ async fn sftp_upload(
         .map_err(|e| e.to_string())
 }
 
+// ---- 系统信息命令 ----
+
+#[tauri::command]
+async fn sys_info(
+    state: tauri::State<'_, SshState>,
+) -> Result<SystemInfo, String> {
+    let credentials = state
+        .credentials
+        .lock()
+        .await
+        .clone()
+        .ok_or_else(|| "请先建立 SSH 连接".to_string())?;
+
+    sysinfo::get_system_info(&credentials)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 // ---- 数据库命令 ----
 
 #[tauri::command]
@@ -116,6 +136,7 @@ pub fn run() {
             ssh_resize,
             ssh_disconnect,
             sftp_upload,
+            sys_info,
             list_connections,
             save_connection,
             delete_connection,

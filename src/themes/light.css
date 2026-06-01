@@ -1,0 +1,67 @@
+/* ================================================
+   TerminalZ — 亮色主题 (Light Theme)
+   通过 html[data-theme="light"] 覆盖 :root 变量
+   ================================================ */
+
+html[data-theme="light"] {
+  /* ---- 背景 Backgrounds ---- */
+  --color-bg-primary:       #ffffff;
+  --color-bg-panel:         #f6f8fa;
+  --color-bg-secondary:     #f0f0f0;
+  --color-bg-input:         #ffffff;
+  --color-bg-form:          #e8e8e8;
+  --color-bg-hover:         #eaeef2;
+  --color-bg-hover-alt:     #d0d7de;
+  --color-bg-active:        #d0d7de;
+
+  /* ---- 文字 Text ---- */
+  --color-text-primary:     #1f2328;
+  --color-text-secondary:   #656d76;
+  --color-text-tertiary:    #8b949e;
+  --color-text-white:       #ffffff;
+  --color-text-terminal:    #1f2328;
+  --color-text-heading:     #24292f;
+
+  /* ---- 边框 Borders ---- */
+  --color-border-primary:   #d0d7de;
+  --color-border-secondary: #d8dee4;
+  --color-border-input:     #afb8c1;
+  --color-border-tab:       #d0d7de;
+
+  /* ---- 强调色 Accent ---- */
+  --color-accent:           #0969da;
+  --color-accent-bg:        #0969da;
+  --color-accent-light:     #54aeff;
+
+  /* ---- 按钮 Buttons ---- */
+  --color-btn-primary:      #0969da;
+  --color-btn-primary-hover:#0550ae;
+  --color-btn-save:         #ebecf0;
+  --color-btn-save-hover:   #d0d7de;
+  --color-btn-save-text:    #24292f;
+  --color-btn-upload:       #1a7f37;
+  --color-btn-upload-hover: #1f883d;
+
+  /* ---- 状态色 Status Colors ---- */
+  --color-success:          #1a7f37;
+  --color-success-light:    #2da44e;
+  --color-warning:          #bf8700;
+  --color-danger:           #cf222e;
+  --color-danger-hover:     #a40e26;
+  --color-danger-btn:       #cf222e;
+  --color-danger-btn-hover: #a40e26;
+
+  /* ---- 进度 / 其他 Progress ---- */
+  --color-progress:         #0969da;
+  --color-progress-done:    #1a7f37;
+  --color-progress-error:   #cf222e;
+
+  /* ---- 阴影 Shadow ---- */
+  --shadow-panel:           0 8px 32px rgba(0, 0, 0, 0.12);
+  --shadow-overlay:         rgba(140, 149, 159, 0.4);
+
+  /* ---- 终端 Terminal ---- */
+  --terminal-bg:            #ffffff;
+  --terminal-fg:            #1f2328;
+  --terminal-cursor:        #0969da;
+}
