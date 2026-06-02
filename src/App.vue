@@ -69,6 +69,7 @@ function onSelectHost(config) {
 
 function onConnectionChange(connected) {
   isConnected.value = connected
+  if (!connected) selectedHost.value = null
 }
 </script>
 

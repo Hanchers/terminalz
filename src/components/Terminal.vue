@@ -22,31 +22,53 @@
       </div>
     </div>
 
+    <!-- 欢迎页 -->
+    <div v-if="!connected && !prefill" class="welcome">
+      <div class="welcome-content">
+        <div class="welcome-logo">
+          <svg viewBox="0 0 64 64" width="64" height="64" fill="none">
+            <rect x="4" y="14" width="56" height="36" rx="4" stroke="currentColor" stroke-width="2.5"/>
+            <path d="M16 28h8M28 28h8M40 28h8M16 36h6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <circle cx="52" cy="20" r="3" fill="currentColor"/>
+          </svg>
+        </div>
+        <h1>TerminalZ</h1>
+        <p class="welcome-sub">Secure SSH Terminal &amp; File Manager</p>
+        <div class="welcome-hint">
+          <span class="hint-arrow">←</span>
+          <span>Select a host from the sidebar to connect</span>
+        </div>
+        <div class="welcome-shortcuts">
+          <div class="sc-item">
+            <kbd>Hosts</kbd>
+            <span>Manage connections &amp; groups</span>
+          </div>
+          <div class="sc-item">
+            <kbd>Ctrl</kbd> + <kbd>U</kbd>
+            <span>Upload files</span>
+          </div>
+          <div class="sc-item">
+            <kbd>Settings</kbd>
+            <span>Switch theme</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- 连接表单覆盖层 -->
-    <div v-if="!connected" class="connect-overlay">
+    <div v-if="!connected && prefill" class="connect-overlay">
       <div class="connect-form">
         <h2>SSH 远程连接</h2>
         <div class="form-group">
           <input v-model="name" placeholder="连接名称 (可选)" @keyup.enter="doConnect" />
         </div>
         <div class="form-group">
-          <input v-model="host" placeholder="主机地址 (例: 192.168.1.1)" @keyup.enter="doConnect" />
-          <input
-            v-model.number="port"
-            placeholder="端口"
-            type="number"
-            style="max-width: 100px"
-            @keyup.enter="doConnect"
-          />
+          <input v-model="host" placeholder="主机地址" @keyup.enter="doConnect" />
+          <input v-model.number="port" placeholder="端口" type="number" style="max-width:100px" @keyup.enter="doConnect" />
         </div>
         <div class="form-group">
           <input v-model="username" placeholder="用户名" @keyup.enter="doConnect" />
-          <input
-            v-model="password"
-            placeholder="密码"
-            type="password"
-            @keyup.enter="doConnect"
-          />
+          <input v-model="password" placeholder="密码" type="password" @keyup.enter="doConnect" />
         </div>
         <div class="btn-row">
           <button class="btn-connect" @click="doConnect" :disabled="connecting">
@@ -250,6 +272,94 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   background: var(--color-bg-primary);
+}
+
+/* ---- 欢迎页 ---- */
+.welcome {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg-primary);
+  z-index: 10;
+}
+
+.welcome-content {
+  text-align: center;
+  max-width: 420px;
+}
+
+.welcome-logo {
+  color: var(--color-accent);
+  margin-bottom: 16px;
+  opacity: 0.7;
+}
+
+.welcome h1 {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  letter-spacing: 1px;
+  margin-bottom: 6px;
+}
+
+.welcome-sub {
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  margin-bottom: 32px;
+}
+
+.welcome-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: var(--color-bg-panel);
+  border: 1px solid var(--color-border-primary);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  margin-bottom: 36px;
+}
+
+.hint-arrow {
+  font-size: 16px;
+  color: var(--color-accent);
+  animation: hintPulse 2s ease-in-out infinite;
+}
+
+@keyframes hintPulse {
+  0%, 100% { opacity: 1; transform: translateX(0); }
+  50% { opacity: 0.4; transform: translateX(-4px); }
+}
+
+.welcome-shortcuts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+}
+
+.sc-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+.sc-item kbd {
+  display: inline-block;
+  padding: 2px 7px;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border-primary);
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  min-width: 24px;
+  text-align: center;
 }
 
 /* ---- 标签栏 ---- */
