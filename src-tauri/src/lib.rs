@@ -3,7 +3,7 @@ mod ssh;
 mod sftp;
 mod sysinfo;
 
-use db::{ConnectionConfig, DbState};
+use db::{ConnectionConfig, DbState, HostGroup};
 use ssh::SshState;
 use sftp::{FileEntry, UploadResult};
 use sysinfo::SystemInfo;
@@ -226,6 +226,33 @@ fn delete_connection(db: tauri::State<'_, DbState>, id: i64) -> Result<(), Strin
     db.delete(id).map_err(|e| e.to_string())
 }
 
+// ---- 分组命令 ----
+
+#[tauri::command]
+fn list_groups(db: tauri::State<'_, DbState>) -> Result<Vec<HostGroup>, String> {
+    db.list_groups().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn save_group(db: tauri::State<'_, DbState>, group: HostGroup) -> Result<HostGroup, String> {
+    let new_id = db.save_group(&group).map_err(|e| e.to_string())?;
+    Ok(HostGroup { id: new_id, ..group })
+}
+
+#[tauri::command]
+fn delete_group(db: tauri::State<'_, DbState>, id: i64) -> Result<(), String> {
+    // 检查是否有子分组
+    if db.has_child_groups(id).map_err(|e| e.to_string())? {
+        return Err("该分组下存在子分组，请先删除子分组".to_string());
+    }
+    // 检查是否有 host
+    let count = db.count_hosts_in_group(id).map_err(|e| e.to_string())?;
+    if count > 0 {
+        return Err(format!("该分组及子分组下存在 {} 个 host，请先移除这些 host", count));
+    }
+    db.delete_group(id).map_err(|e| e.to_string())
+}
+
 // ---- 启动入口 ----
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -260,6 +287,9 @@ pub fn run() {
             list_connections,
             save_connection,
             delete_connection,
+            list_groups,
+            save_group,
+            delete_group,
         ])
         .run(tauri::generate_context!())
         .expect("启动 Tauri 应用失败");

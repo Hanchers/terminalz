@@ -24,34 +24,39 @@
       </div>
     </div>
 
-    <!-- Hosts 列表 -->
+    <!-- Hosts 树形面板 -->
     <div v-if="!collapsed && activeMenu === 'hosts'" class="hosts-panel">
       <div class="hosts-header">
-        <span>Saved Hosts</span>
-        <button class="btn-refresh" @click="loadList" title="Refresh">↻</button>
-      </div>
-      <div v-if="savedList.length === 0" class="hosts-empty">
-        No saved connections
-      </div>
-      <div v-else class="hosts-list">
-        <div
-          v-for="item in savedList"
-          :key="item.id"
-          class="hosts-item"
-          :class="{ selected: selectedId === item.id }"
-          @click="selectHost(item)"
-        >
-          <div class="host-icon">
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
-              <path d="M2 20v-2h20v2H2zm0-6v-2h6v2H2zm0-6V6h6v2H2zm9 12v-2h5v2h-5zm3-6v-2h6v2h-6zm3-6V6h3v2h-3z"/>
-            </svg>
+        <span>Hosts</span>
+        <div class="header-actions">
+          <button class="btn-refresh" @click="loadAll" title="Refresh">↻</button>
+          <button class="btn-add" @click.stop="openAddMenu" title="Add">+</button>
+          <div v-if="showAddMenu" class="mini-dropdown" @click.stop>
+            <div class="mini-item" @click="openGroupDialog()">New Group</div>
+            <div class="mini-item" @click="openHostDialog()">New Host</div>
           </div>
-          <div class="host-info">
-            <div class="host-name">{{ item.name || item.host }}</div>
-            <div class="host-detail">{{ item.username }}@{{ item.host }}:{{ item.port }}</div>
-          </div>
-          <button class="btn-del" @click.stop="doDelete(item.id)" title="Delete">✕</button>
         </div>
+      </div>
+
+      <!-- 无数据显示 -->
+      <div v-if="!groups.length && !connections.length" class="hosts-empty">
+        No hosts or groups — click + to add
+      </div>
+
+      <!-- 树形列表 -->
+      <div class="hosts-tree" @click="showAddMenu = false">
+        <TreeNode
+          :groups="groups"
+          :connections="connections"
+          :selected-id="selectedId"
+          :parent-id="0"
+          :depth="0"
+          :collapsed-groups="collapsedGroups"
+          @toggle-group="toggleGroup"
+          @select-host="selectHost"
+          @ctx-group="onCtxGroup"
+          @ctx-host="onCtxHost"
+        />
       </div>
     </div>
 
@@ -74,328 +79,338 @@
         </div>
       </div>
     </div>
+
+    <!-- ======== 弹窗：编辑/新建 Host ======== -->
+    <div v-if="hostDialog.visible" class="modal-overlay" @click.self="closeHostDialog">
+      <div class="modal-box">
+        <div class="modal-title">{{ hostDialog.editingId ? 'Edit' : 'New' }} Host</div>
+        <div class="modal-field">
+          <label>Name</label>
+          <input v-model="hostDialog.name" placeholder="My Server" @keyup.enter="saveHostDialog" />
+        </div>
+        <div class="modal-field">
+          <label>Host</label>
+          <input v-model="hostDialog.host" placeholder="192.168.1.1" @keyup.enter="saveHostDialog" />
+        </div>
+        <div class="modal-row">
+          <div class="modal-field small">
+            <label>Port</label>
+            <input v-model.number="hostDialog.port" type="number" placeholder="22" />
+          </div>
+          <div class="modal-field">
+            <label>Username</label>
+            <input v-model="hostDialog.username" placeholder="root" @keyup.enter="saveHostDialog" />
+          </div>
+        </div>
+        <div class="modal-field">
+          <label>Password</label>
+          <input v-model="hostDialog.password" type="password" placeholder="password" @keyup.enter="saveHostDialog" />
+        </div>
+        <div class="modal-field">
+          <label>Group</label>
+          <select v-model="hostDialog.groupId">
+            <option :value="0">(No Group)</option>
+            <option v-for="g in flatGroupOptions" :key="g.id" :value="g.id">
+              {{ g.label }}
+            </option>
+          </select>
+        </div>
+        <div class="modal-actions">
+          <button class="modal-btn cancel" @click="closeHostDialog">Cancel</button>
+          <button class="modal-btn primary" @click="saveHostDialog">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======== 弹窗：编辑/新建 Group ======== -->
+    <div v-if="groupDialog.visible" class="modal-overlay" @click.self="closeGroupDialog">
+      <div class="modal-box">
+        <div class="modal-title">{{ groupDialog.editingId ? 'Edit' : 'New' }} Group</div>
+        <div class="modal-field">
+          <label>Name</label>
+          <input v-model="groupDialog.name" placeholder="Production" @keyup.enter="saveGroupDialog" />
+        </div>
+        <div class="modal-field">
+          <label>Parent Group</label>
+          <select v-model="groupDialog.parentId">
+            <option :value="0">(Root)</option>
+            <option v-for="g in groupSelectOptions" :key="g.id" :value="g.id" :disabled="g.disabled">
+              {{ g.label }}
+            </option>
+          </select>
+        </div>
+        <div class="modal-field">
+          <label>Remark</label>
+          <textarea v-model="groupDialog.remark" placeholder="Optional notes..." rows="2"></textarea>
+        </div>
+        <div class="modal-actions">
+          <button class="modal-btn cancel" @click="closeGroupDialog">Cancel</button>
+          <button class="modal-btn primary" @click="saveGroupDialog">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======== 右键菜单 ======== -->
+    <div
+      v-if="ctxMenu.visible"
+      class="context-menu"
+      :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
+    >
+      <template v-if="ctxMenu.type === 'group'">
+        <div class="ctx-item" @click="editGroup(ctxMenu.id)">Edit Group</div>
+        <div class="ctx-item" @click="openHostDialog(ctxMenu.id)">New Host</div>
+        <div class="ctx-item" @click="openGroupDialog(ctxMenu.id)">New Subgroup</div>
+        <div class="ctx-sep"></div>
+        <div class="ctx-item ctx-danger" @click="tryDeleteGroup(ctxMenu.id)">Delete Group</div>
+      </template>
+      <template v-else-if="ctxMenu.type === 'host'">
+        <div class="ctx-item" @click="editHost(ctxMenu.id)">Edit Host</div>
+        <div class="ctx-sep"></div>
+        <div class="ctx-item ctx-danger" @click="deleteHost(ctxMenu.id)">Delete Host</div>
+      </template>
+      <template v-else>
+        <div class="ctx-item" @click="openGroupDialog()">New Group</div>
+        <div class="ctx-item" @click="openHostDialog()">New Host</div>
+      </template>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { currentTheme, themes, setTheme } from '../themes/index.js'
+import TreeNode from './TreeNode.vue'
 
-const props = defineProps({
-  collapsed: { type: Boolean, default: false },
-})
-
+const props = defineProps({ collapsed: { type: Boolean, default: false } })
 const emit = defineEmits(['select-host', 'toggle'])
 
 const activeMenu = ref('hosts')
-const savedList = ref([])
 const selectedId = ref(0)
+const connections = ref([])
+const groups = ref([])
+const collapsedGroups = ref(new Set())
+const showAddMenu = ref(false)
 
-onMounted(() => {
-  loadList()
+// ---- 右键菜单 ----
+const ctxMenu = reactive({ visible: false, x: 0, y: 0, type: '', id: 0 })
+
+// ---- 弹窗 ----
+const hostDialog = reactive({
+  visible: false, editingId: 0,
+  name: '', host: '', port: 22, username: '', password: '', groupId: 0
+})
+const groupDialog = reactive({
+  visible: false, editingId: 0,
+  name: '', parentId: 0, remark: ''
 })
 
-async function loadList() {
-  try {
-    savedList.value = await invoke('list_connections')
-  } catch (_) {
-    savedList.value = []
-  }
+// ---- 加载 ----
+onMounted(() => { loadAll() })
+
+async function loadAll() {
+  try { connections.value = await invoke('list_connections') } catch (_) { connections.value = [] }
+  try { groups.value = await invoke('list_groups') } catch (_) { groups.value = [] }
 }
 
-function onMenuClick(menu) {
-  if (props.collapsed) {
-    // 收起状态下点击图标 → 展开面板
-    emit('toggle')
-  }
-  activeMenu.value = menu
+// ---- 树操作 ----
+function toggleGroup(id) {
+  const s = new Set(collapsedGroups.value)
+  s.has(id) ? s.delete(id) : s.add(id)
+  collapsedGroups.value = s
 }
 
 function selectHost(item) {
   selectedId.value = item.id
-  emit('select-host', {
-    name: item.name || '',
-    host: item.host,
-    port: item.port,
-    username: item.username,
-    password: item.password,
-    id: item.id,
+  emit('select-host', { ...item, name: item.name || item.host })
+}
+
+// ---- 扁平分组选项（for host dialog select）----
+const flatGroupOptions = computed(() => flattenGroups(groups.value, 0, 0))
+
+function flattenGroups(list, parentId, depth) {
+  let result = []
+  for (const g of list) {
+    if (g.parent_id !== parentId) continue
+    result.push({ id: g.id, label: '  '.repeat(depth) + g.name })
+    result.push(...flattenGroups(list, g.id, depth + 1))
+  }
+  return result
+}
+
+// 分组下拉选项（排除自己 + 后代，避免循环引用）
+const groupSelectOptions = computed(() => {
+  if (!groupDialog.editingId) return flatGroupOptions.value
+  const excludeIds = new Set([groupDialog.editingId])
+  // 收集后代
+  function collectDescendants(pid) {
+    for (const g of groups.value) {
+      if (g.parent_id === pid) { excludeIds.add(g.id); collectDescendants(g.id) }
+    }
+  }
+  collectDescendants(groupDialog.editingId)
+  return flatGroupOptions.value.filter(o => !excludeIds.has(o.id))
+})
+
+// ---- Host 弹窗 ----
+function openHostDialog(groupId = 0) {
+  showAddMenu.value = false
+  ctxMenu.visible = false
+  Object.assign(hostDialog, {
+    visible: true, editingId: 0,
+    name: '', host: '', port: 22, username: '', password: '', groupId
   })
 }
 
-async function doDelete(id) {
+async function editHost(id) {
+  ctxMenu.visible = false
+  const c = connections.value.find(x => x.id === id)
+  if (!c) return
+  Object.assign(hostDialog, {
+    visible: true, editingId: c.id,
+    name: c.name || '', host: c.host, port: c.port || 22,
+    username: c.username, password: c.password, groupId: c.group_id || 0
+  })
+}
+
+async function saveHostDialog() {
+  if (!hostDialog.host || !hostDialog.username) return
   try {
-    await invoke('delete_connection', { id })
-    if (selectedId.value === id) selectedId.value = 0
-    await loadList()
-  } catch (_) {}
+    await invoke('save_connection', { config: {
+      id: hostDialog.editingId,
+      name: hostDialog.name || `${hostDialog.username}@${hostDialog.host}`,
+      host: hostDialog.host, port: hostDialog.port,
+      username: hostDialog.username, password: hostDialog.password,
+      group_id: hostDialog.groupId
+    }})
+    closeHostDialog()
+    await loadAll()
+  } catch (e) { alert('Save failed: ' + e) }
+}
+
+function closeHostDialog() { hostDialog.visible = false }
+
+async function deleteHost(id) {
+  ctxMenu.visible = false
+  if (!confirm('Delete this host?')) return
+  try { await invoke('delete_connection', { id }); await loadAll() } catch (e) { alert('' + e) }
+}
+
+// ---- Group 弹窗 ----
+function openGroupDialog(parentId = 0) {
+  showAddMenu.value = false
+  ctxMenu.visible = false
+  Object.assign(groupDialog, { visible: true, editingId: 0, name: '', parentId, remark: '' })
+}
+
+async function editGroup(id) {
+  ctxMenu.visible = false
+  const g = groups.value.find(x => x.id === id)
+  if (!g) return
+  Object.assign(groupDialog, { visible: true, editingId: g.id, name: g.name, parentId: g.parent_id, remark: g.remark || '' })
+}
+
+async function saveGroupDialog() {
+  if (!groupDialog.name) return
+  try {
+    await invoke('save_group', { group: {
+      id: groupDialog.editingId,
+      parent_id: groupDialog.parentId,
+      name: groupDialog.name,
+      remark: groupDialog.remark
+    }})
+    closeGroupDialog()
+    await loadAll()
+  } catch (e) { alert('Save failed: ' + e) }
+}
+
+function closeGroupDialog() { groupDialog.visible = false }
+
+async function tryDeleteGroup(id) {
+  ctxMenu.visible = false
+  try {
+    await invoke('delete_group', { id })
+    await loadAll()
+  } catch (e) { alert(e) }
+}
+
+// ---- 右键菜单 ----
+function onCtxGroup(id, e) {
+  ctxMenu.visible = true; ctxMenu.x = e.clientX; ctxMenu.y = e.clientY
+  ctxMenu.type = 'group'; ctxMenu.id = id
+}
+function onCtxHost(id, e) {
+  ctxMenu.visible = true; ctxMenu.x = e.clientX; ctxMenu.y = e.clientY
+  ctxMenu.type = 'host'; ctxMenu.id = id
+}
+
+// ---- actions ----
+function openAddMenu() { showAddMenu.value = !showAddMenu.value }
+function onMenuClick(menu) {
+  if (props.collapsed) emit('toggle')
+  activeMenu.value = menu
+}
+
+// 全局点击关闭
+function hideCtxAndMenus() {
+  ctxMenu.visible = false
+  showAddMenu.value = false
+}
+if (typeof window !== 'undefined') {
+  window.addEventListener('click', hideCtxAndMenus)
 }
 </script>
 
 <style scoped>
-.sidebar {
-  width: 220px;
-  min-width: 220px;
-  height: 100%;
-  background: var(--color-bg-panel);
-  border-right: 1px solid var(--color-border-primary);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  user-select: none;
-  transition: width 0.2s ease, min-width 0.2s ease;
-}
-
-.sidebar.collapsed {
-  width: 48px;
-  min-width: 48px;
-}
-
-/* 菜单列表 */
-.menu-list {
-  padding: 8px;
-  border-bottom: 1px solid var(--color-border-secondary);
-}
-
-.sidebar.collapsed .menu-list {
-  padding: 8px 4px;
-}
-
-.menu-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 12px;
-  border-radius: 6px;
-  color: var(--color-text-secondary);
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.sidebar.collapsed .menu-item {
-  justify-content: center;
-  padding: 7px 0;
-}
-
-.menu-item:hover {
-  background: var(--color-bg-hover);
-  color: var(--color-text-primary);
-}
-
-.menu-item.active {
-  background: var(--color-bg-hover);
-  color: var(--color-accent);
-}
-
-/* Hosts 面板 */
-.hosts-panel {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.hosts-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--color-text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  border-bottom: 1px solid var(--color-border-secondary);
-}
-
-.btn-refresh {
-  width: 24px;
-  height: 24px;
-  background: transparent;
-  border: none;
-  border-radius: 4px;
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  font-size: 14px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.btn-refresh:hover {
-  background: var(--color-bg-hover-alt);
-  color: var(--color-text-primary);
-}
-
-.hosts-empty {
-  padding: 24px 12px;
-  text-align: center;
-  color: var(--color-text-tertiary);
-  font-size: 12px;
-}
-
-.hosts-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 6px 8px;
-}
-
-.hosts-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 8px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: background 0.15s;
-  margin-bottom: 2px;
-}
-
-.hosts-item:hover {
-  background: var(--color-bg-hover);
-}
-
-.hosts-item.selected {
-  background: var(--color-accent-bg);
-}
-
-.host-icon {
-  color: var(--color-accent);
-  flex-shrink: 0;
-  display: flex;
-}
-
-.hosts-item.selected .host-icon {
-  color: var(--color-text-white);
-}
-
-.host-info {
-  flex: 1;
-  overflow: hidden;
-  min-width: 0;
-}
-
-.host-name {
-  font-size: 13px;
-  color: var(--color-text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-weight: 500;
-}
-
-.hosts-item.selected .host-name {
-  color: var(--color-text-white);
-}
-
-.host-detail {
-  font-size: 11px;
-  color: var(--color-text-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.hosts-item.selected .host-detail {
-  color: var(--color-accent-light);
-}
-
-.btn-del {
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  background: transparent;
-  color: var(--color-text-tertiary);
-  border: none;
-  border-radius: 3px;
-  font-size: 12px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  opacity: 0;
-}
-
-.hosts-item:hover .btn-del {
-  opacity: 1;
-}
-
-.btn-del:hover {
-  background: var(--color-danger-hover);
-  color: var(--color-text-white);
-  opacity: 1;
-}
-
-/* ===== Settings 面板 ===== */
-.settings-panel {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.settings-header {
-  padding: 10px 12px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--color-text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  border-bottom: 1px solid var(--color-border-secondary);
-}
-
-.settings-section {
-  padding: 12px;
-}
-
-.settings-label {
-  font-size: 11px;
-  color: var(--color-text-tertiary);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 8px;
-}
-
-.theme-options {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.theme-opt {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  background: transparent;
-  border: 1px solid var(--color-border-secondary);
-  border-radius: 6px;
-  color: var(--color-text-secondary);
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.15s;
-  text-align: left;
-}
-
-.theme-opt:hover {
-  background: var(--color-bg-hover);
-  color: var(--color-text-primary);
-}
-
-.theme-opt.active {
-  background: var(--color-accent-bg);
-  border-color: var(--color-accent);
-  color: var(--color-text-white);
-}
-
-.theme-icon {
-  font-size: 16px;
-}
-
-.theme-name {
-  font-weight: 500;
-}
+.sidebar { width: 220px; min-width: 220px; height: 100%; background: var(--color-bg-panel); border-right: 1px solid var(--color-border-primary); display: flex; flex-direction: column; overflow: hidden; user-select: none; transition: width 0.2s ease, min-width 0.2s ease; }
+.sidebar.collapsed { width: 48px; min-width: 48px; }
+.menu-list { padding: 8px; border-bottom: 1px solid var(--color-border-secondary); }
+.sidebar.collapsed .menu-list { padding: 8px 4px; }
+.menu-item { display: flex; align-items: center; gap: 8px; padding: 7px 12px; border-radius: 6px; color: var(--color-text-secondary); font-size: 13px; cursor: pointer; transition: all 0.15s; }
+.sidebar.collapsed .menu-item { justify-content: center; padding: 7px 0; }
+.menu-item:hover { background: var(--color-bg-hover); color: var(--color-text-primary); }
+.menu-item.active { background: var(--color-bg-hover); color: var(--color-accent); }
+.hosts-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.hosts-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; font-size: 11px; font-weight: 600; color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--color-border-secondary); }
+.btn-refresh { width: 24px; height: 24px; background: transparent; border: none; border-radius: 4px; color: var(--color-text-secondary); cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; }
+.btn-refresh:hover { background: var(--color-bg-hover-alt); color: var(--color-text-primary); }
+.hosts-empty { padding: 24px 12px; text-align: center; color: var(--color-text-tertiary); font-size: 12px; }
+.settings-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.settings-header { padding: 10px 12px; font-size: 11px; font-weight: 600; color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--color-border-secondary); }
+.settings-section { padding: 12px; }
+.settings-label { font-size: 11px; color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+.theme-options { display: flex; flex-direction: column; gap: 4px; }
+.theme-opt { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: transparent; border: 1px solid var(--color-border-secondary); border-radius: 6px; color: var(--color-text-secondary); font-size: 13px; cursor: pointer; transition: all 0.15s; text-align: left; }
+.theme-opt:hover { background: var(--color-bg-hover); color: var(--color-text-primary); }
+.theme-opt.active { background: var(--color-accent-bg); border-color: var(--color-accent); color: var(--color-text-white); }
+.theme-icon { font-size: 16px; }
+.theme-name { font-weight: 500; }
+.hosts-tree { flex: 1; overflow-y: auto; padding: 4px 0; }
+.header-actions { display: flex; align-items: center; gap: 2px; position: relative; }
+.btn-add { width: 24px; height: 24px; background: transparent; border: none; border-radius: 4px; color: var(--color-text-secondary); cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center; }
+.btn-add:hover { background: var(--color-bg-hover-alt); color: var(--color-text-primary); }
+.mini-dropdown { position: absolute; right: 0; top: 100%; z-index: 20; min-width: 120px; background: var(--color-bg-panel); border: 1px solid var(--color-border-primary); border-radius: 6px; box-shadow: var(--shadow-panel); padding: 4px; }
+.mini-item { padding: 6px 10px; font-size: 12px; color: var(--color-text-primary); border-radius: 4px; cursor: pointer; }
+.mini-item:hover { background: var(--color-bg-hover); }
+.context-menu { position: fixed; z-index: 200; min-width: 150px; background: var(--color-bg-panel); border: 1px solid var(--color-border-primary); border-radius: 6px; box-shadow: var(--shadow-panel); padding: 4px; }
+.ctx-item { padding: 6px 10px; font-size: 12px; color: var(--color-text-primary); border-radius: 4px; cursor: pointer; }
+.ctx-item:hover { background: var(--color-bg-hover); }
+.ctx-danger { color: var(--color-danger); }
+.ctx-sep { height: 1px; background: var(--color-border-secondary); margin: 3px 6px; }
+.modal-overlay { position: fixed; inset: 0; z-index: 300; background: var(--shadow-overlay); display: flex; align-items: center; justify-content: center; }
+.modal-box { width: 400px; max-height: 80vh; overflow-y: auto; background: var(--color-bg-panel); border: 1px solid var(--color-border-primary); border-radius: 10px; box-shadow: var(--shadow-panel); padding: 20px; }
+.modal-title { font-size: 15px; font-weight: 600; color: var(--color-text-primary); margin-bottom: 16px; }
+.modal-field { margin-bottom: 12px; }
+.modal-field label { display: block; font-size: 11px; color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+.modal-field input, .modal-field select, .modal-field textarea { width: 100%; padding: 7px 10px; font-size: 13px; background: var(--color-bg-input); border: 1px solid var(--color-border-input); border-radius: 5px; color: var(--color-text-primary); outline: none; box-sizing: border-box; font-family: inherit; }
+.modal-field input:focus, .modal-field select:focus, .modal-field textarea:focus { border-color: var(--color-accent); }
+.modal-field textarea { resize: vertical; }
+.modal-row { display: flex; gap: 10px; }
+.modal-row .modal-field.small { flex: 0 0 100px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.modal-btn { padding: 7px 18px; font-size: 13px; border: none; border-radius: 5px; cursor: pointer; }
+.modal-btn.cancel { background: var(--color-bg-hover-alt); color: var(--color-text-primary); }
+.modal-btn.cancel:hover { background: var(--color-bg-active); }
+.modal-btn.primary { background: var(--color-btn-primary); color: var(--color-text-white); }
+.modal-btn.primary:hover { background: var(--color-btn-primary-hover); }
 </style>
