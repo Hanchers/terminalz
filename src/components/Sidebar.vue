@@ -191,61 +191,63 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
-import { currentTheme, themes, setTheme } from '../themes/index.js'
+import { currentTheme, themes, setTheme } from '../themes/index'
 import TreeNode from './TreeNode.vue'
 
-const props = defineProps({ collapsed: { type: Boolean, default: false } })
-const emit = defineEmits(['select-host', 'toggle'])
+interface Group { id: number; parent_id: number; name: string; remark: string }
+interface Connection { id: number; name: string; host: string; port: number; username: string; password: string; group_id: number }
+interface FlatOption { id: number; label: string }
+interface CtxMenu { visible: boolean; x: number; y: number; type: string; id: number }
+interface HostDialog { visible: boolean; editingId: number; name: string; host: string; port: number; username: string; password: string; groupId: number }
+interface GroupDialog { visible: boolean; editingId: number; name: string; parentId: number; remark: string }
+
+const props = defineProps<{ collapsed: boolean }>()
+const emit = defineEmits<{ 'select-host': [config: Record<string, any>]; 'toggle': [] }>()
 
 const activeMenu = ref('hosts')
 const selectedId = ref(0)
-const connections = ref([])
-const groups = ref([])
-const collapsedGroups = ref(new Set())
+const connections = ref<Connection[]>([])
+const groups = ref<Group[]>([])
+const collapsedGroups = ref(new Set<number>())
 const showAddMenu = ref(false)
 
-// ---- 右键菜单 ----
-const ctxMenu = reactive({ visible: false, x: 0, y: 0, type: '', id: 0 })
+const ctxMenu = reactive<CtxMenu>({ visible: false, x: 0, y: 0, type: '', id: 0 })
 
-// ---- 弹窗 ----
 const showHostPwd = ref(false)
-const hostDialog = reactive({
+const hostDialog = reactive<HostDialog>({
   visible: false, editingId: 0,
   name: '', host: '', port: 22, username: '', password: '', groupId: 0
 })
-const groupDialog = reactive({
+const groupDialog = reactive<GroupDialog>({
   visible: false, editingId: 0,
   name: '', parentId: 0, remark: ''
 })
 
-// ---- 加载 ----
 onMounted(() => { loadAll() })
 
-async function loadAll() {
-  try { connections.value = await invoke('list_connections') } catch (_) { connections.value = [] }
-  try { groups.value = await invoke('list_groups') } catch (_) { groups.value = [] }
+async function loadAll(): Promise<void> {
+  try { connections.value = await invoke<Connection[]>('list_connections') } catch (_) { connections.value = [] }
+  try { groups.value = await invoke<Group[]>('list_groups') } catch (_) { groups.value = [] }
 }
 
-// ---- 树操作 ----
-function toggleGroup(id) {
+function toggleGroup(id: number): void {
   const s = new Set(collapsedGroups.value)
   s.has(id) ? s.delete(id) : s.add(id)
   collapsedGroups.value = s
 }
 
-function selectHost(item) {
+function selectHost(item: Connection): void {
   selectedId.value = item.id
   emit('select-host', { ...item, name: item.name || item.host })
 }
 
-// ---- 扁平分组选项（for host dialog select）----
-const flatGroupOptions = computed(() => flattenGroups(groups.value, 0, 0))
+const flatGroupOptions = computed<FlatOption[]>(() => flattenGroups(groups.value, 0, 0))
 
-function flattenGroups(list, parentId, depth) {
-  let result = []
+function flattenGroups(list: Group[], parentId: number, depth: number): FlatOption[] {
+  let result: FlatOption[] = []
   for (const g of list) {
     if (g.parent_id !== parentId) continue
     result.push({ id: g.id, label: '  '.repeat(depth) + g.name })
@@ -254,12 +256,10 @@ function flattenGroups(list, parentId, depth) {
   return result
 }
 
-// 分组下拉选项（排除自己 + 后代，避免循环引用）
-const groupSelectOptions = computed(() => {
+const groupSelectOptions = computed<FlatOption[]>(() => {
   if (!groupDialog.editingId) return flatGroupOptions.value
   const excludeIds = new Set([groupDialog.editingId])
-  // 收集后代
-  function collectDescendants(pid) {
+  function collectDescendants(pid: number): void {
     for (const g of groups.value) {
       if (g.parent_id === pid) { excludeIds.add(g.id); collectDescendants(g.id) }
     }
@@ -268,8 +268,7 @@ const groupSelectOptions = computed(() => {
   return flatGroupOptions.value.filter(o => !excludeIds.has(o.id))
 })
 
-// ---- Host 弹窗 ----
-function openHostDialog(groupId = 0) {
+function openHostDialog(groupId = 0): void {
   showAddMenu.value = false
   ctxMenu.visible = false
   Object.assign(hostDialog, {
@@ -278,7 +277,7 @@ function openHostDialog(groupId = 0) {
   })
 }
 
-async function editHost(id) {
+async function editHost(id: number): Promise<void> {
   ctxMenu.visible = false
   const c = connections.value.find(x => x.id === id)
   if (!c) return
@@ -289,7 +288,7 @@ async function editHost(id) {
   })
 }
 
-async function saveHostDialog() {
+async function saveHostDialog(): Promise<void> {
   if (!hostDialog.host || !hostDialog.username) return
   try {
     await invoke('save_connection', { config: {
@@ -304,29 +303,28 @@ async function saveHostDialog() {
   } catch (e) { alert('Save failed: ' + e) }
 }
 
-function closeHostDialog() { hostDialog.visible = false; showHostPwd.value = false }
+function closeHostDialog(): void { hostDialog.visible = false; showHostPwd.value = false }
 
-async function deleteHost(id) {
+async function deleteHost(id: number): Promise<void> {
   ctxMenu.visible = false
   if (!confirm('Delete this host?')) return
   try { await invoke('delete_connection', { id }); await loadAll() } catch (e) { alert('' + e) }
 }
 
-// ---- Group 弹窗 ----
-function openGroupDialog(parentId = 0) {
+function openGroupDialog(parentId = 0): void {
   showAddMenu.value = false
   ctxMenu.visible = false
   Object.assign(groupDialog, { visible: true, editingId: 0, name: '', parentId, remark: '' })
 }
 
-async function editGroup(id) {
+async function editGroup(id: number): Promise<void> {
   ctxMenu.visible = false
   const g = groups.value.find(x => x.id === id)
   if (!g) return
   Object.assign(groupDialog, { visible: true, editingId: g.id, name: g.name, parentId: g.parent_id, remark: g.remark || '' })
 }
 
-async function saveGroupDialog() {
+async function saveGroupDialog(): Promise<void> {
   if (!groupDialog.name) return
   try {
     await invoke('save_group', { group: {
@@ -340,9 +338,9 @@ async function saveGroupDialog() {
   } catch (e) { alert('Save failed: ' + e) }
 }
 
-function closeGroupDialog() { groupDialog.visible = false }
+function closeGroupDialog(): void { groupDialog.visible = false }
 
-async function tryDeleteGroup(id) {
+async function tryDeleteGroup(id: number): Promise<void> {
   ctxMenu.visible = false
   try {
     await invoke('delete_group', { id })
@@ -350,25 +348,22 @@ async function tryDeleteGroup(id) {
   } catch (e) { alert(e) }
 }
 
-// ---- 右键菜单 ----
-function onCtxGroup(id, e) {
+function onCtxGroup(id: number, e: MouseEvent): void {
   ctxMenu.visible = true; ctxMenu.x = e.clientX; ctxMenu.y = e.clientY
   ctxMenu.type = 'group'; ctxMenu.id = id
 }
-function onCtxHost(id, e) {
+function onCtxHost(id: number, e: MouseEvent): void {
   ctxMenu.visible = true; ctxMenu.x = e.clientX; ctxMenu.y = e.clientY
   ctxMenu.type = 'host'; ctxMenu.id = id
 }
 
-// ---- actions ----
-function openAddMenu() { showAddMenu.value = !showAddMenu.value }
-function onMenuClick(menu) {
+function openAddMenu(): void { showAddMenu.value = !showAddMenu.value }
+function onMenuClick(menu: string): void {
   if (props.collapsed) emit('toggle')
   activeMenu.value = menu
 }
 
-// 全局点击关闭
-function hideCtxAndMenus() {
+function hideCtxAndMenus(): void {
   ctxMenu.visible = false
   showAddMenu.value = false
 }

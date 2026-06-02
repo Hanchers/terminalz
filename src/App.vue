@@ -52,22 +52,24 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref } from 'vue'
 import Sidebar from './components/Sidebar.vue'
 import Terminal from './components/Terminal.vue'
 import ServerStatus from './components/ServerStatus.vue'
 
+interface HostConfig { id?: number; name?: string; host: string; port: number; username: string; password: string; group_id?: number }
+
 const isConnected = ref(false)
-const selectedHost = ref(null)
+const selectedHost = ref<HostConfig | null>(null)
 const sidebarCollapsed = ref(false)
 const statusCollapsed = ref(false)
 
-function onSelectHost(config) {
+function onSelectHost(config: HostConfig) {
   selectedHost.value = { ...config }
 }
 
-function onConnectionChange(connected) {
+function onConnectionChange(connected: boolean) {
   isConnected.value = connected
   if (!connected) selectedHost.value = null
 }

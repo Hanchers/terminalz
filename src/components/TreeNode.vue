@@ -38,35 +38,41 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed } from 'vue'
 
-const props = defineProps({
-  groups: Array,
-  connections: Array,
-  selectedId: Number,
-  parentId: Number,
-  depth: Number,
-  collapsedGroups: Object,  // Set 在 Vue props 中传过来会变成普通对象
-})
+interface Group { id: number; parent_id: number; name: string; remark?: string }
+interface Connection { id: number; name?: string; host: string; port: number; username: string; password: string; group_id: number }
 
-defineEmits(['toggle-group', 'select-host', 'ctx-group', 'ctx-host'])
+const props = defineProps<{
+  groups: Group[]
+  connections: Connection[]
+  selectedId: number
+  parentId: number
+  depth: number
+  collapsedGroups: Set<number> | { has: (id: number) => boolean } | number[]
+}>()
 
-function isCollapsed(id) {
-  // Set 通过 props 传递后变成了普通对象，需要特殊处理
+defineEmits<{
+  'toggle-group': [id: number]
+  'select-host': [host: Connection]
+  'ctx-group': [id: number, event: MouseEvent]
+  'ctx-host': [id: number, event: MouseEvent]
+}>()
+
+function isCollapsed(id: number): boolean {
   if (props.collapsedGroups instanceof Set) return props.collapsedGroups.has(id)
-  // 兼容 Set-like 或 Array
-  if (props.collapsedGroups && typeof props.collapsedGroups.has === 'function') return props.collapsedGroups.has(id)
-  if (Array.isArray(props.collapsedGroups)) return props.collapsedGroups.includes(id)
+  if (props.collapsedGroups && typeof (props.collapsedGroups as any).has === 'function') return (props.collapsedGroups as any).has(id)
+  if (Array.isArray(props.collapsedGroups)) return (props.collapsedGroups as number[]).includes(id)
   return false
 }
 
 const childGroups = computed(() =>
-  (props.groups || []).filter(g => g.parent_id === props.parentId)
+  props.groups.filter(g => g.parent_id === props.parentId)
 )
 
 const directHosts = computed(() =>
-  (props.connections || []).filter(c => (c.group_id || 0) === props.parentId)
+  props.connections.filter(c => (c.group_id || 0) === props.parentId)
 )
 </script>
 

@@ -109,22 +109,21 @@
   </div>
 </template>
 
-<script setup>
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+<script setup lang="ts">
+import { ref, computed, onUnmounted, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 
-const props = defineProps({
-  active: { type: Boolean, default: false },
-  collapsed: { type: Boolean, default: false },
-})
+interface DiskItem { mount: string; total: number; used: number; pct: number }
+interface SysInfo { hostname: string; os_name: string; kernel: string; uptime: string; cpu_pct: number; load_1min: number; load_5min: number; load_15min: number; mem_pct: number; mem_used: number; mem_total: number; disks: DiskItem[] }
 
-const info = ref(null)
+const props = defineProps<{ active: boolean; collapsed: boolean }>()
+
+const info = ref<SysInfo | null>(null)
 const error = ref('')
 const polling = ref(false)
 const lastUpdate = ref('')
-let timer = null
+let timer: ReturnType<typeof setInterval> | null = null
 
-// CPU 颜色：<50% 绿, <80% 橙, >=80% 红
 const cpuColor = computed(() => {
   if (!info.value) return getVar('--color-success')
   const pct = info.value.cpu_pct
@@ -141,13 +140,12 @@ const memColor = computed(() => {
   return getVar('--color-success')
 })
 
-function diskItemColor(pct) {
+function diskItemColor(pct: number): string {
   if (pct >= 90) return getVar('--color-danger')
   if (pct >= 75) return getVar('--color-warning')
   return getVar('--color-success')
 }
 
-// 收起模式用根分区
 const rootDisk = computed(() =>
   info.value?.disks?.find(d => d.mount === '/') || info.value?.disks?.[0]
 )
@@ -158,31 +156,31 @@ const rootDiskColor = computed(() =>
   rootDisk.value ? diskItemColor(rootDisk.value.pct) : getVar('--color-success')
 )
 
-function getVar(name) {
+function getVar(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
 }
 
-async function fetchInfo() {
+async function fetchInfo(): Promise<void> {
   if (!props.active) return
   polling.value = true
   error.value = ''
   try {
-    info.value = await invoke('sys_info')
+    info.value = await invoke<SysInfo>('sys_info')
     lastUpdate.value = new Date().toLocaleTimeString()
   } catch (e) {
-    error.value = e
+    error.value = e as string
   } finally {
     polling.value = false
   }
 }
 
-function formatBytes(mb) {
+function formatBytes(mb: number): string {
   if (!mb || mb === 0) return '0 MB'
   if (mb >= 1024) return (mb / 1024).toFixed(1) + ' GB'
   return mb + ' MB'
 }
 
-function formatDisk(mb) {
+function formatDisk(mb: number): string {
   if (!mb || mb === 0) return '0 GB'
   const gb = mb / 1024
   if (gb >= 1000) return (gb / 1024).toFixed(1) + ' TB'

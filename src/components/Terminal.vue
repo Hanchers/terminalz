@@ -103,7 +103,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -112,11 +112,10 @@ import { listen } from '@tauri-apps/api/event';
 import '@xterm/xterm/css/xterm.css';
 import FileTransfer from './FileTransfer.vue';
 
-const props = defineProps({
-  prefill: { type: Object, default: null },
-})
+interface HostPrefill { id?: number; name?: string; host: string; port: number; username: string; password: string }
 
-const emit = defineEmits(['connection-change'])
+const props = defineProps<{ prefill: HostPrefill | null }>()
+const emit = defineEmits<{ 'connection-change': [connected: boolean] }>()
 
 const connected = ref(false);
 const connecting = ref(false);
@@ -127,19 +126,19 @@ const port = ref(22);
 const username = ref('');
 const password = ref('');
 const showPassword = ref(false);
-const termContainer = ref(null);
+const termContainer = ref<HTMLDivElement | null>(null);
 const editingId = ref(0);
 const showFileTransfer = ref(false);
 
-let term = null;
-let fitAddon = null;
-let unlisten = null;
+let term: Terminal | null = null;
+let fitAddon: FitAddon | null = null;
+let unlisten: (() => void) | null = null;
 
 const canSave = computed(() => host.value && username.value);
 
 // ---- 外部 prefill ---
 
-watch(() => props.prefill, (val) => {
+watch(() => props.prefill, (val: HostPrefill | null) => {
   if (val) {
     name.value = val.name || '';
     host.value = val.host || '';
@@ -151,14 +150,11 @@ watch(() => props.prefill, (val) => {
   }
 }, { deep: true })
 
-// ---- 初始化 ----
-
 onMounted(() => {});
-
 
 // ---- 终端操作 ----
 
-function createTerminal() {
+function createTerminal(): void {
   term = new Terminal({
     cursorBlink: true,
     fontSize: 14,
@@ -171,7 +167,7 @@ function createTerminal() {
   term.loadAddon(fitAddon);
 }
 
-function readTerminalTheme() {
+function readTerminalTheme(): { background: string; foreground: string; cursor: string } {
   const style = getComputedStyle(document.documentElement);
   return {
     background: style.getPropertyValue('--terminal-bg').trim(),
@@ -180,7 +176,7 @@ function readTerminalTheme() {
   };
 }
 
-function ensureTerminalOpen() {
+function ensureTerminalOpen(): void {
   if (!term) createTerminal();
   term.open(termContainer.value);
   fitAddon.fit();
@@ -198,7 +194,7 @@ async function doConnect() {
   try {
     ensureTerminalOpen();
 
-    unlisten = await listen('ssh-output', (event) => {
+    unlisten = await listen<{ data: number[] }>('ssh-output', (event) => {
       if (term) {
         const data = new Uint8Array(event.payload.data);
         term.write(data);
@@ -263,7 +259,7 @@ async function doSave() {
       username: username.value,
       password: password.value,
     };
-    const saved = await invoke('save_connection', { config });
+    const saved = await invoke<{ id: number }>('save_connection', { config });
     editingId.value = saved.id;
     error.value = '已保存 ✓';
     setTimeout(() => { error.value = ''; }, 1500);

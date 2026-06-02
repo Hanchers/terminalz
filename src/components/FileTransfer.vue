@@ -158,29 +158,30 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 
-const emit = defineEmits(['close'])
+interface FileItem { name: string; is_dir: boolean; size: number; modified: string }
+interface ProgressPayload { file_name: string; current: number; total: number; percentage: number; status: string }
+interface CtxMenu { visible: boolean; x: number; y: number; side: string; file: FileItem | null }
+interface SelectState { local: string | null; remote: string | null }
 
-// ---- 状态 ----
+const emit = defineEmits<{ close: [] }>()
+
 const localPath = ref('/Users')
 const remotePath = ref('/')
-const localFiles = ref([])
-const remoteFiles = ref([])
+const localFiles = ref<FileItem[]>([])
+const remoteFiles = ref<FileItem[]>([])
 const statusMsg = ref('')
 const progressMsg = ref('')
 const progressPct = ref(0)
-const openDropdown = ref(null)
-let unlisten = null
+const openDropdown = ref<string | null>(null)
+let unlisten: UnlistenFn | null = null
 
-// 选择状态
-const selected = reactive({ local: null, remote: null })
-
-// 上下文菜单
-const ctxMenu = reactive({ visible: false, x: 0, y: 0, side: '', file: null })
+const selected = reactive<SelectState>({ local: null, remote: null })
+const ctxMenu = reactive<CtxMenu>({ visible: false, x: 0, y: 0, side: '', file: null })
 
 // ---- 初始化 ----
 onMounted(async () => {
@@ -204,9 +205,9 @@ onUnmounted(() => {
 })
 
 // ---- 数据加载 ----
-async function loadLocal(dir) {
+async function loadLocal(dir: string): Promise<void> {
   try {
-    localFiles.value = await invoke('read_local_dir', { path: dir })
+    localFiles.value = await invoke<FileItem[]>('read_local_dir', { path: dir })
     localPath.value = dir
     statusMsg.value = ''
   } catch (e) {
@@ -215,9 +216,9 @@ async function loadLocal(dir) {
   }
 }
 
-async function loadRemote(dir) {
+async function loadRemote(dir: string): Promise<void> {
   try {
-    remoteFiles.value = await invoke('sftp_list_dir', { remotePath: dir })
+    remoteFiles.value = await invoke<FileItem[]>('sftp_list_dir', { remotePath: dir })
     remotePath.value = dir
     statusMsg.value = ''
   } catch (e) {
@@ -226,10 +227,10 @@ async function loadRemote(dir) {
   }
 }
 
-function refreshLocal() { loadLocal(localPath.value) }
-function refreshRemote() { loadRemote(remotePath.value) }
+function refreshLocal(): void { loadLocal(localPath.value) }
+function refreshRemote(): void { loadRemote(remotePath.value) }
 
-function navUp(side) {
+function navUp(side: string): void {
   if (side === 'local') {
     const p = localPath.value.replace(/\/+$/, '').split('/').slice(0, -1).join('/') || '/'
     loadLocal(p)
@@ -240,15 +241,15 @@ function navUp(side) {
 }
 
 // ---- 点击 / 双击 ----
-function onClick(side, file) {
-  selected[side] = file.name
+function onClick(side: string, file: FileItem): void {
+  (selected as any)[side] = file.name
 }
 
-function isSelected(side, name) {
-  return selected[side] === name
+function isSelected(side: string, name: string): boolean {
+  return (selected as any)[side] === name
 }
 
-function onDblClick(side, file) {
+function onDblClick(side: string, file: FileItem): void {
   if (!file.is_dir) return
   if (side === 'local') {
     loadLocal(localPath.value.replace(/\/+$/, '') + '/' + file.name)
@@ -257,24 +258,21 @@ function onDblClick(side, file) {
   }
 }
 
-// ---- 拖拽 ----
-function onDragStart(e, side, name) {
-  e.dataTransfer.setData('text/plain', JSON.stringify({ side, name }))
-  e.dataTransfer.effectAllowed = 'move'
+function onDragStart(e: DragEvent, side: string, name: string): void {
+  e.dataTransfer!.setData('text/plain', JSON.stringify({ side, name }))
+  e.dataTransfer!.effectAllowed = 'move'
 }
 
-async function onDrop(targetSide, e) {
-  let data
-  try { data = JSON.parse(e.dataTransfer.getData('text/plain')) } catch (_) { return }
-  if (!data || data.side === targetSide) return // 不能同侧拖放
+async function onDrop(targetSide: string, e: DragEvent): Promise<void> {
+  let data: { side: string; name: string } | null = null
+  try { data = JSON.parse(e.dataTransfer!.getData('text/plain')) } catch (_) { return }
+  if (!data || data.side === targetSide) return
 
   if (data.side === 'local' && targetSide === 'remote') {
-    // 上传: 本地 → 远程
     const localFull = localPath.value.replace(/\/+$/, '') + '/' + data.name
     await uploadFile(localFull)
     refreshRemote()
   } else if (data.side === 'remote' && targetSide === 'local') {
-    // 下载: 远程 → 本地
     const remoteFull = remotePath.value.replace(/\/+$/, '') + '/' + data.name
     await downloadFile(remoteFull)
     refreshLocal()
@@ -282,8 +280,7 @@ async function onDrop(targetSide, e) {
   closeCtxMenu()
 }
 
-// ---- 上传 / 下载 ----
-async function uploadFile(localFull) {
+async function uploadFile(localFull: string): Promise<void> {
   progressMsg.value = 'Uploading...'
   try {
     await invoke('sftp_upload', {
@@ -296,37 +293,33 @@ async function uploadFile(localFull) {
   }
 }
 
-async function downloadFile(remoteFull) {
+async function downloadFile(remoteFull: string): Promise<void> {
   const name = remoteFull.split('/').pop() || 'download'
   const localFull = localPath.value.replace(/\/+$/, '') + '/' + name
   progressMsg.value = 'Downloading...'
   try {
-    await invoke('sftp_download', {
-      remotePath: remoteFull,
-      localPath: localFull,
-    })
+    await invoke('sftp_download', { remotePath: remoteFull, localPath: localFull })
     statusMsg.value = 'Download done'
   } catch (e) {
     statusMsg.value = 'Download failed: ' + e
   }
 }
 
-function uploadSelected() {
+function uploadSelected(): void {
   if (!selected.local) return
   const localFull = localPath.value.replace(/\/+$/, '') + '/' + selected.local
   uploadFile(localFull).then(() => refreshRemote())
   closeCtxMenu()
 }
 
-function downloadSelected() {
+function downloadSelected(): void {
   if (!selected.remote) return
   const remoteFull = remotePath.value.replace(/\/+$/, '') + '/' + selected.remote
   downloadFile(remoteFull).then(() => refreshLocal())
   closeCtxMenu()
 }
 
-// ---- 删除 ----
-async function deleteRemote() {
+async function deleteRemote(): Promise<void> {
   if (!selected.remote) return
   const full = remotePath.value.replace(/\/+$/, '') + '/' + selected.remote
   if (!confirm(`Delete ${full}?`)) return
@@ -334,14 +327,11 @@ async function deleteRemote() {
     await invoke('sftp_delete', { remotePath: full })
     statusMsg.value = 'Deleted'
     refreshRemote()
-  } catch (e) {
-    statusMsg.value = 'Delete failed: ' + e
-  }
+  } catch (e) { statusMsg.value = 'Delete failed: ' + e }
   closeCtxMenu()
 }
 
-// ---- 重命名 ----
-async function promptRename() {
+async function promptRename(): Promise<void> {
   if (!selected.remote) return
   const oldName = selected.remote
   const newName = prompt('New name:', oldName)
@@ -352,14 +342,11 @@ async function promptRename() {
     await invoke('sftp_rename', { oldPath: oldFull, newPath: newFull })
     statusMsg.value = 'Renamed'
     refreshRemote()
-  } catch (e) {
-    statusMsg.value = 'Rename failed: ' + e
-  }
+  } catch (e) { statusMsg.value = 'Rename failed: ' + e }
   closeCtxMenu()
 }
 
-// ---- 新建目录 ----
-async function promptNewDir(side) {
+async function promptNewDir(side: string): Promise<void> {
   closeDropdown()
   const dirName = prompt('Folder name:')
   if (!dirName) return
@@ -383,8 +370,7 @@ async function promptNewDir(side) {
 }
 
 // ---- 右键菜单 ----
-function onContextMenu(e, side) {
-  // 空白区域右键
+function onContextMenu(e: MouseEvent, side: string): void {
   ctxMenu.visible = true
   ctxMenu.x = e.clientX
   ctxMenu.y = e.clientY
@@ -392,8 +378,8 @@ function onContextMenu(e, side) {
   ctxMenu.file = null
 }
 
-function onRowContext(e, side, file) {
-  selected[side] = file.name
+function onRowContext(e: MouseEvent, side: string, file: FileItem): void {
+  (selected as any)[side] = file.name
   ctxMenu.visible = true
   ctxMenu.x = e.clientX
   ctxMenu.y = e.clientY
@@ -401,21 +387,15 @@ function onRowContext(e, side, file) {
   ctxMenu.file = file
 }
 
-function closeCtxMenu() {
-  ctxMenu.visible = false
-}
+function closeCtxMenu(): void { ctxMenu.visible = false }
 
-// ---- 下拉菜单 ----
-function toggleDropdown(name) {
+function toggleDropdown(name: string): void {
   openDropdown.value = openDropdown.value === name ? null : name
 }
 
-function closeDropdown() {
-  openDropdown.value = null
-}
+function closeDropdown(): void { openDropdown.value = null }
 
-// ---- 工具函数 ----
-function formatSize(bytes) {
+function formatSize(bytes: number): string {
   if (!bytes || bytes === 0) return '0 B'
   const units = ['B', 'KB', 'MB', 'GB', 'TB']
   const i = Math.floor(Math.log(bytes) / Math.log(1024))
