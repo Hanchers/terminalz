@@ -116,7 +116,7 @@ import { invoke } from '@tauri-apps/api/core'
 interface DiskItem { mount: string; total: number; used: number; pct: number }
 interface SysInfo { hostname: string; os_name: string; kernel: string; uptime: string; cpu_pct: number; load_1min: number; load_5min: number; load_15min: number; mem_pct: number; mem_used: number; mem_total: number; disks: DiskItem[] }
 
-const props = defineProps<{ active: boolean; collapsed: boolean }>()
+const props = defineProps<{ active: boolean; collapsed: boolean; connectionMode: 'ssh' | 'local' | null }>()
 
 const info = ref<SysInfo | null>(null)
 const error = ref('')
@@ -165,7 +165,8 @@ async function fetchInfo(): Promise<void> {
   polling.value = true
   error.value = ''
   try {
-    info.value = await invoke<SysInfo>('sys_info')
+    const cmd = props.connectionMode === 'local' ? 'local_sys_info' : 'sys_info'
+    info.value = await invoke<SysInfo>(cmd)
     lastUpdate.value = new Date().toLocaleTimeString()
   } catch (e) {
     error.value = e as string

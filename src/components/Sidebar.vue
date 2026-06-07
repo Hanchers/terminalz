@@ -30,6 +30,7 @@
         <span>Hosts</span>
         <div class="header-actions">
           <button class="btn-refresh" @click="loadAll" title="Refresh">↻</button>
+          <button class="btn-add" @click.stop="openLocalTerminal" title="Local Terminal">💻</button>
           <button class="btn-add" @click.stop="openAddMenu" title="Add">+</button>
           <div v-if="showAddMenu" class="mini-dropdown" @click.stop>
             <div class="mini-item" @click="openGroupDialog()">New Group</div>
@@ -205,7 +206,7 @@ interface HostDialog { visible: boolean; editingId: number; name: string; host: 
 interface GroupDialog { visible: boolean; editingId: number; name: string; parentId: number; remark: string }
 
 const props = defineProps<{ collapsed: boolean }>()
-const emit = defineEmits<{ 'select-host': [config: Record<string, any>]; 'toggle': [] }>()
+const emit = defineEmits<{ 'select-host': [config: Record<string, any>]; 'select-local': []; 'toggle': [] }>()
 
 const activeMenu = ref('hosts')
 const selectedId = ref(0)
@@ -358,6 +359,10 @@ function onCtxHost(id: number, e: MouseEvent): void {
 }
 
 function openAddMenu(): void { showAddMenu.value = !showAddMenu.value }
+function openLocalTerminal(): void {
+  showAddMenu.value = false
+  emit('select-local')
+}
 function onMenuClick(menu: string): void {
   if (props.collapsed) emit('toggle')
   activeMenu.value = menu
@@ -403,6 +408,7 @@ if (typeof window !== 'undefined') {
 .mini-dropdown { position: absolute; right: 0; top: 100%; z-index: 20; min-width: 120px; background: var(--color-bg-panel); border: 1px solid var(--color-border-primary); border-radius: 6px; box-shadow: var(--shadow-panel); padding: 4px; }
 .mini-item { padding: 6px 10px; font-size: 12px; color: var(--color-text-primary); border-radius: 4px; cursor: pointer; }
 .mini-item:hover { background: var(--color-bg-hover); }
+.mini-sep { height: 1px; background: var(--color-border-secondary); margin: 3px 6px; }
 .context-menu { position: fixed; z-index: 200; min-width: 150px; background: var(--color-bg-panel); border: 1px solid var(--color-border-primary); border-radius: 6px; box-shadow: var(--shadow-panel); padding: 4px; }
 .ctx-item { padding: 6px 10px; font-size: 12px; color: var(--color-text-primary); border-radius: 4px; cursor: pointer; }
 .ctx-item:hover { background: var(--color-bg-hover); }

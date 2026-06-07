@@ -6,10 +6,10 @@
         <svg viewBox="0 0 24 24" width="12" height="12" fill="#3fb950">
           <circle cx="12" cy="12" r="4"/>
         </svg>
-        <span>{{ host }}</span>
+        <span>{{ mode === 'local' ? 'Local' : host }}</span>
       </div>
       <div class="tab-actions">
-        <button @click="showFileTransfer = true" class="tab-btn" title="Upload Files">
+        <button v-if="mode !== 'local'" @click="showFileTransfer = true" class="tab-btn" title="Upload Files">
           <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
             <path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/>
           </svg>
@@ -23,7 +23,7 @@
     </div>
 
     <!-- 欢迎页 -->
-    <div v-if="!connected && !prefill" class="welcome">
+    <div v-if="!connected && !prefill && mode !== 'local'" class="welcome">
       <div class="welcome-content">
         <div class="welcome-logo">
           <svg viewBox="0 0 64 64" width="64" height="64" fill="none">
@@ -56,7 +56,7 @@
     </div>
 
     <!-- 连接表单覆盖层 -->
-    <div v-if="!connected && prefill" class="connect-overlay">
+    <div v-if="!connected && prefill && mode !== 'local'" class="connect-overlay">
       <div class="connect-form">
         <h2>SSH 远程连接</h2>
         <div class="form-group">
@@ -114,7 +114,7 @@ import FileTransfer from './FileTransfer.vue';
 
 interface HostPrefill { id?: number; name?: string; host: string; port: number; username: string; password: string }
 
-const props = defineProps<{ prefill: HostPrefill | null }>()
+const props = defineProps<{ prefill: HostPrefill | null; mode: 'ssh' | 'local' | null }>()
 const emit = defineEmits<{ 'connection-change': [connected: boolean] }>()
 
 const connected = ref(false);
@@ -152,6 +152,14 @@ watch(() => props.prefill, (val: HostPrefill | null) => {
 
 onMounted(() => {});
 
+// ---- 本地终端自动连接 ----
+
+watch(() => props.mode, (newMode) => {
+  if (newMode === 'local' && !connected.value && !connecting.value) {
+    doConnect();
+  }
+});
+
 // ---- 终端操作 ----
 
 function createTerminal(): void {
@@ -183,6 +191,51 @@ function ensureTerminalOpen(): void {
 }
 
 async function doConnect() {
+  // ---- 本地终端模式 ----
+  if (props.mode === 'local') {
+    connecting.value = true;
+    error.value = '';
+    try {
+      ensureTerminalOpen();
+
+      unlisten = await listen<{ data: number[] }>('local-output', (event) => {
+        if (term) {
+          const data = new Uint8Array(event.payload.data);
+          term.write(data);
+        }
+      });
+
+      term.onData((data) => {
+        invoke('local_term_write', {
+          data: Array.from(new TextEncoder().encode(data)),
+        }).catch(() => {});
+      });
+
+      term.onResize(({ rows, cols }) => {
+        if (connected.value) {
+          invoke('local_term_resize', { rows, cols }).catch(() => {});
+        }
+      });
+
+      await invoke('local_term_start', {
+        rows: term.rows,
+        cols: term.cols,
+      });
+
+      connected.value = true;
+      emit('connection-change', true);
+
+      window.addEventListener('resize', () => fitAddon?.fit());
+    } catch (e) {
+      error.value = `启动本地终端失败: ${e}`;
+      cleanupTerminal();
+    } finally {
+      connecting.value = false;
+    }
+    return;
+  }
+
+  // ---- SSH 远程连接 ----
   if (!host.value || !username.value || !password.value) {
     error.value = '请填写主机地址、用户名和密码';
     return;
@@ -240,7 +293,11 @@ function cleanupTerminal() {
 }
 
 async function disconnect() {
-  try { await invoke('ssh_disconnect'); } catch (_) {}
+  if (props.mode === 'local') {
+    try { await invoke('local_term_close'); } catch (_) {}
+  } else {
+    try { await invoke('ssh_disconnect'); } catch (_) {}
+  }
   cleanupTerminal();
   connected.value = false;
   emit('connection-change', false);

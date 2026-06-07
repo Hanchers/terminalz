@@ -268,3 +268,115 @@ fn parse_mb(s: &str) -> u64 {
     let cleaned = s.trim_end_matches(|c: char| !c.is_ascii_digit());
     cleaned.parse().unwrap_or(0)
 }
+
+// ---- 本地系统信息采集（非 SSH，直接读取本机） ----
+
+/// 使用 sysinfo 库采集本地系统信息
+pub fn get_local_system_info() -> Result<SystemInfo> {
+    let mut sys = ::sysinfo::System::new_all();
+
+    // 两次刷新才能获取准确的 CPU 使用率
+    sys.refresh_cpu_all();
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    sys.refresh_all();
+    sys.refresh_cpu_all();
+
+    // CPU
+    let cpu_pct = {
+        let cpus = sys.cpus();
+        if cpus.is_empty() {
+            0.0
+        } else {
+            let sum: f32 = cpus.iter().map(|c| c.cpu_usage()).sum();
+            (sum / cpus.len() as f32).min(100.0).max(0.0) as f64
+        }
+    };
+
+    // Load Average
+    let load_avg = ::sysinfo::System::load_average();
+
+    // Memory (bytes → MB)
+    let total_mem = sys.total_memory() / 1024 / 1024;
+    let used_mem = sys.used_memory() / 1024 / 1024;
+    let avail_mem = sys.available_memory() / 1024 / 1024;
+    let mem_pct = if total_mem > 0 {
+        (used_mem as f64 / total_mem as f64 * 100.0).min(100.0)
+    } else {
+        0.0
+    };
+
+    // Disks
+    let mut disks: Vec<DiskInfo> = Vec::new();
+    let sys_disks = ::sysinfo::Disks::new_with_refreshed_list();
+    for disk in sys_disks.list() {
+        let mount = disk.mount_point().to_string_lossy().to_string();
+        let total = disk.total_space() / 1024 / 1024;
+        let avail = disk.available_space() / 1024 / 1024;
+        let used = total.saturating_sub(avail);
+        let pct = if total > 0 {
+            (used as f64 / total as f64 * 100.0).min(100.0)
+        } else {
+            0.0
+        };
+        // 过滤掉过小的特殊挂载点
+        if total > 0 {
+            disks.push(DiskInfo { mount, total, used, pct });
+        }
+    }
+    if disks.is_empty() {
+        disks.push(DiskInfo { mount: "/".into(), total: 0, used: 0, pct: 0.0 });
+    }
+
+    // Hostname
+    let hostname = ::sysinfo::System::host_name()
+        .unwrap_or_else(|| "unknown".to_string());
+
+    // OS Name + Version
+    let os_name = {
+        let name = ::sysinfo::System::name().unwrap_or_else(|| "Unknown".to_string());
+        let version = ::sysinfo::System::os_version().unwrap_or_default();
+        if version.is_empty() {
+            name
+        } else {
+            format!("{} {}", name, version)
+        }
+    };
+
+    // Kernel
+    let kernel = ::sysinfo::System::kernel_version().unwrap_or_else(|| "unknown".to_string());
+
+    // Uptime
+    let uptime_secs = ::sysinfo::System::uptime();
+    let uptime = format_uptime(uptime_secs);
+
+    Ok(SystemInfo {
+        hostname,
+        load_1min: load_avg.one,
+        load_5min: load_avg.five,
+        load_15min: load_avg.fifteen,
+        cpu_pct,
+        mem_total: total_mem,
+        mem_used: used_mem,
+        mem_avail: avail_mem,
+        mem_pct,
+        disks,
+        os_name,
+        kernel,
+        uptime,
+    })
+}
+
+fn format_uptime(secs: u64) -> String {
+    if secs == 0 {
+        return "just now".to_string();
+    }
+    let days = secs / 86400;
+    let hours = (secs % 86400) / 3600;
+    let mins = (secs % 3600) / 60;
+    let mut parts = Vec::new();
+    if days > 0 { parts.push(format!("{} day{}", days, if days > 1 { "s" } else { "" })); }
+    if hours > 0 { parts.push(format!("{} hr", hours)); }
+    if mins > 0 { parts.push(format!("{} min", mins)); }
+    if parts.is_empty() { parts.push("< 1 min".into()); }
+    format!("up {}", parts.join(", "))
+}

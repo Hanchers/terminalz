@@ -1,9 +1,11 @@
 mod db;
+mod local_term;
 mod ssh;
 mod sftp;
 mod sysinfo;
 
 use db::{ConnectionConfig, DbState, HostGroup};
+use local_term::LocalTermState;
 use ssh::SshState;
 use sftp::{FileEntry, UploadResult};
 use sysinfo::SystemInfo;
@@ -49,6 +51,44 @@ async fn ssh_disconnect(
     state: tauri::State<'_, SshState>,
 ) -> Result<(), String> {
     ssh::disconnect(&state).await.map_err(|e| e.to_string())
+}
+
+// ---- 本地终端命令 ----
+
+#[tauri::command]
+async fn local_term_start(
+    state: tauri::State<'_, LocalTermState>,
+    app_handle: tauri::AppHandle,
+    rows: u32,
+    cols: u32,
+) -> Result<(), String> {
+    local_term::start(&state, app_handle, rows, cols)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn local_term_write(
+    state: tauri::State<'_, LocalTermState>,
+    data: Vec<u8>,
+) -> Result<(), String> {
+    local_term::write(&state, &data).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn local_term_resize(
+    state: tauri::State<'_, LocalTermState>,
+    rows: u32,
+    cols: u32,
+) -> Result<(), String> {
+    local_term::resize(&state, rows, cols).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn local_term_close(
+    state: tauri::State<'_, LocalTermState>,
+) -> Result<(), String> {
+    local_term::close(&state).await.map_err(|e| e.to_string())
 }
 
 // ---- SFTP 命令 ----
@@ -174,6 +214,15 @@ async fn sys_info(
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+async fn local_sys_info() -> Result<SystemInfo, String> {
+    // 本地系统信息采集可能耗时，放到阻塞线程中执行
+    tokio::task::spawn_blocking(|| sysinfo::get_local_system_info())
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
 // ---- 本地文件系统命令 ----
 
 #[tauri::command]
@@ -271,11 +320,16 @@ pub fn run() {
             Ok(())
         })
         .manage(SshState::new())
+        .manage(LocalTermState::new())
         .invoke_handler(tauri::generate_handler![
             ssh_connect,
             ssh_write,
             ssh_resize,
             ssh_disconnect,
+            local_term_start,
+            local_term_write,
+            local_term_resize,
+            local_term_close,
             sftp_list_dir,
             sftp_delete,
             sftp_rename,
@@ -283,6 +337,7 @@ pub fn run() {
             sftp_download,
             sftp_upload,
             sys_info,
+            local_sys_info,
             read_local_dir,
             list_connections,
             save_connection,

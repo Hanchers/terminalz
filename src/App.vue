@@ -5,6 +5,7 @@
       <Sidebar
         :collapsed="sidebarCollapsed"
         @select-host="onSelectHost"
+        @select-local="onSelectLocal"
         @toggle="sidebarCollapsed = !sidebarCollapsed"
       />
 
@@ -24,6 +25,7 @@
       <div class="main-area">
         <Terminal
           :prefill="selectedHost"
+          :mode="terminalMode"
           @connection-change="onConnectionChange"
         />
       </div>
@@ -46,6 +48,7 @@
         v-if="isConnected"
         :active="isConnected"
         :collapsed="statusCollapsed"
+        :connection-mode="terminalMode"
         @toggle="statusCollapsed = !statusCollapsed"
       />
     </div>
@@ -62,16 +65,26 @@ interface HostConfig { id?: number; name?: string; host: string; port: number; u
 
 const isConnected = ref(false)
 const selectedHost = ref<HostConfig | null>(null)
+const terminalMode = ref<'ssh' | 'local' | null>(null)
 const sidebarCollapsed = ref(false)
 const statusCollapsed = ref(false)
 
 function onSelectHost(config: HostConfig) {
   selectedHost.value = { ...config }
+  terminalMode.value = 'ssh'
+}
+
+function onSelectLocal() {
+  selectedHost.value = null
+  terminalMode.value = 'local'
 }
 
 function onConnectionChange(connected: boolean) {
   isConnected.value = connected
-  if (!connected) selectedHost.value = null
+  if (!connected) {
+    selectedHost.value = null
+    terminalMode.value = null
+  }
 }
 </script>
 
