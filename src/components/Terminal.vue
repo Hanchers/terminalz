@@ -122,6 +122,8 @@ const emit = defineEmits<{ 'connection-change': [connected: boolean] }>()
 
 const connected = ref(false);
 const connecting = ref(false);
+const connectAttempts = ref(0);
+const MAX_ATTEMPTS = 3;
 const error = ref('');
 const name = ref('');
 const host = ref('');
@@ -159,7 +161,12 @@ onMounted(() => {});
 
 watch(() => props.mode, (newMode) => {
   if (newMode === 'local' && !connected.value && !connecting.value) {
+    connectAttempts.value = 0; // 切换模式时重置
     doConnect();
+  } else if (newMode === 'ssh') {
+    connectAttempts.value = 0;
+  } else if (!newMode) {
+    connectAttempts.value = 0;
   }
 });
 
@@ -196,6 +203,11 @@ function ensureTerminalOpen(): void {
 async function doConnect() {
   // ---- 本地终端模式 ----
   if (props.mode === 'local') {
+    if (connectAttempts.value >= MAX_ATTEMPTS) {
+      error.value = `本地终端启动失败已达 ${MAX_ATTEMPTS} 次上限，请检查环境配置`;
+      return;
+    }
+    connectAttempts.value++;
     connecting.value = true;
     error.value = '';
     try {
@@ -226,6 +238,7 @@ async function doConnect() {
       });
 
       connected.value = true;
+      connectAttempts.value = 0;
       emit('connection-change', true);
 
       window.addEventListener('resize', () => fitAddon?.fit());
@@ -244,6 +257,12 @@ async function doConnect() {
     return;
   }
 
+  if (connectAttempts.value >= MAX_ATTEMPTS) {
+    error.value = `已尝试 ${MAX_ATTEMPTS} 次连接均失败，请检查网络和配置`;
+    return;
+  }
+
+  connectAttempts.value++;
   connecting.value = true;
   error.value = '';
 
@@ -279,6 +298,7 @@ async function doConnect() {
     });
 
     connected.value = true;
+    connectAttempts.value = 0;
     emit('connection-change', true);
 
     window.addEventListener('resize', () => fitAddon?.fit());

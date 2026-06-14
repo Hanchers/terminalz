@@ -6,6 +6,7 @@ use tokio::sync::{mpsc, Mutex};
 
 // ---- SSH Client Handler ----
 
+#[derive(Clone)]
 pub(crate) struct ClientHandler;
 
 impl client::Handler for ClientHandler {
@@ -88,9 +89,43 @@ pub async fn connect(
     let config = Arc::new(client::Config::default());
     let handler = ClientHandler;
 
-    let mut session = client::connect(config, (host.to_owned(), port), handler)
+    const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+    const MAX_RETRIES: u32 = 3;
+
+    eprintln!("[SSH] connecting to {}:{} ...", host, port);
+
+    let mut session = None;
+    for attempt in 1..=MAX_RETRIES {
+        match tokio::time::timeout(
+            CONNECT_TIMEOUT,
+            client::connect(config.clone(), (host.to_string(), port), handler.clone()),
+        )
         .await
-        .context("SSH 连接失败")?;
+        {
+            Ok(Ok(s)) => {
+                session = Some(s);
+                break;
+            }
+            Ok(Err(e)) if attempt < MAX_RETRIES => {
+                eprintln!("[SSH] connect attempt {}/{} failed: {}. retrying in 1s...", attempt, MAX_RETRIES, e);
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            }
+            Ok(Err(e)) => {
+                return Err(e).context(format!("SSH 连接失败（已重试 {} 次）", MAX_RETRIES));
+            }
+            Err(_) if attempt < MAX_RETRIES => {
+                eprintln!("[SSH] connect attempt {}/{} timed out. retrying...", attempt, MAX_RETRIES);
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            }
+            Err(_) => {
+                return Err(anyhow::anyhow!("SSH 连接超时（已重试 {} 次）", MAX_RETRIES));
+            }
+        }
+    }
+
+    let mut session = session.context("SSH 连接失败")?;
+
+    eprintln!("[SSH] connected, authenticating...");
 
     session
         .authenticate_password(username, password)
