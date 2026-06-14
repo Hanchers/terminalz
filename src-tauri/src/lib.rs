@@ -4,7 +4,7 @@ mod ssh;
 mod sftp;
 mod sysinfo;
 
-use db::{ConnectionConfig, DbState, HostGroup};
+use db::{ConnectionConfig, DbState, HostGroup, Tag};
 use local_term::LocalTermState;
 use ssh::SshState;
 use sftp::{FileEntry, UploadResult};
@@ -302,6 +302,41 @@ fn delete_group(db: tauri::State<'_, DbState>, id: i64) -> Result<(), String> {
     db.delete_group(id).map_err(|e| e.to_string())
 }
 
+// ---- 标签命令 ----
+
+#[tauri::command]
+fn list_tags(db: tauri::State<'_, DbState>) -> Result<Vec<Tag>, String> {
+    db.list_tags().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn save_tag(
+    db: tauri::State<'_, DbState>,
+    name: String,
+    color: String,
+) -> Result<Tag, String> {
+    db.save_tag(&name, &color).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_tag(db: tauri::State<'_, DbState>, id: i64) -> Result<(), String> {
+    db.delete_tag(id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_host_tags(db: tauri::State<'_, DbState>, host_id: i64) -> Result<Vec<Tag>, String> {
+    db.get_host_tags(host_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_host_tags(
+    db: tauri::State<'_, DbState>,
+    host_id: i64,
+    tag_ids: Vec<i64>,
+) -> Result<(), String> {
+    db.set_host_tags(host_id, &tag_ids).map_err(|e| e.to_string())
+}
+
 // ---- 启动入口 ----
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -345,6 +380,11 @@ pub fn run() {
             list_groups,
             save_group,
             delete_group,
+            list_tags,
+            save_tag,
+            delete_tag,
+            get_host_tags,
+            set_host_tags,
         ])
         .run(tauri::generate_context!())
         .expect("启动 Tauri 应用失败");

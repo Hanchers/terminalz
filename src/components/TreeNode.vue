@@ -34,6 +34,12 @@
     <span class="tree-arrow"></span>
     <span class="tree-icon">🖥</span>
     <span class="tree-name">{{ c.name || c.host }}</span>
+    <span
+      v-for="t in (hostTags || new Map()).get(c.id) || []"
+      :key="'t'+t.id"
+      class="tag-badge"
+      :style="{ background: t.color }"
+    >{{ t.name }}</span>
     <span class="tree-detail">{{ c.username }}@{{ c.host }}:{{ c.port }}</span>
   </div>
 </template>
@@ -43,6 +49,7 @@ import { computed } from 'vue'
 
 interface Group { id: number; parent_id: number; name: string; remark?: string }
 interface Connection { id: number; name?: string; host: string; port: number; username: string; password: string; group_id: number }
+interface Tag { id: number; name: string; color: string }
 
 const props = defineProps<{
   groups: Group[]
@@ -51,6 +58,7 @@ const props = defineProps<{
   parentId: number
   depth: number
   collapsedGroups: Set<number> | { has: (id: number) => boolean } | number[]
+  hostTags: Map<number, Tag[]>
 }>()
 
 defineEmits<{
@@ -87,4 +95,9 @@ const directHosts = computed(() =>
 .tree-remark { font-size: 10px; color: var(--color-text-tertiary); font-style: italic; margin-left: 4px; }
 .tree-detail { font-size: 10px; color: var(--color-text-tertiary); margin-left: 4px; }
 .tree-row.selected .tree-detail { color: var(--color-accent-light); }
+.tag-badge {
+  display: inline-block; padding: 1px 6px; border-radius: 8px;
+  font-size: 9px; color: #fff; white-space: nowrap; line-height: 1.4;
+  margin-left: 3px; flex-shrink: 0;
+}
 </style>

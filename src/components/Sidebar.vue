@@ -30,6 +30,7 @@
         <span>Hosts</span>
         <div class="header-actions">
           <button class="btn-refresh" @click="loadAll" title="Refresh">↻</button>
+          <button class="btn-tags" @click.stop="openTagDialog" title="Manage Tags">🏷</button>
           <button class="btn-add" @click.stop="openLocalTerminal" title="Local Terminal">💻</button>
           <button class="btn-add" @click.stop="openAddMenu" title="Add">+</button>
           <div v-if="showAddMenu" class="mini-dropdown" @click.stop>
@@ -53,6 +54,7 @@
           :parent-id="0"
           :depth="0"
           :collapsed-groups="collapsedGroups"
+          :host-tags="hostTagsMap"
           @toggle-group="toggleGroup"
           @select-host="selectHost"
           @ctx-group="onCtxGroup"
@@ -131,6 +133,34 @@
             </option>
           </select>
         </div>
+        <div class="modal-field">
+          <label>Tags</label>
+          <div class="tag-checkboxes">
+            <label
+              v-for="t in allTags"
+              :key="t.id"
+              class="tag-checkbox-label"
+              :style="{ borderColor: t.color, color: hostDialog.tagIds.includes(t.id) ? '#fff' : t.color, background: hostDialog.tagIds.includes(t.id) ? t.color : 'transparent' }"
+            >
+              <input
+                type="checkbox"
+                :checked="hostDialog.tagIds.includes(t.id)"
+                @change="toggleHostTag(t.id)"
+                style="display:none"
+              />
+              {{ t.name }}
+            </label>
+            <span v-if="allTags.length === 0" class="tag-none">No tags created yet — use Manage Tags</span>
+          </div>
+          <button class="btn-tag-add" @click="quickAddTag" title="Quick add tag">+ New Tag</button>
+          <div v-if="showQuickTag" class="quick-tag-row">
+            <input v-model="newTag.name" placeholder="Tag name" class="tag-name-input" @keyup.enter="saveQuickTag" />
+            <label class="color-swatch" :style="{ background: newTag.color }">
+              <input v-model="newTag.color" type="color" />
+            </label>
+            <button class="modal-btn primary" style="padding:4px 10px;font-size:12px" @click="saveQuickTag">Add</button>
+          </div>
+        </div>
         <div class="modal-actions">
           <button class="modal-btn cancel" @click="closeHostDialog">Cancel</button>
           <button class="modal-btn primary" @click="saveHostDialog">Save</button>
@@ -162,6 +192,32 @@
         <div class="modal-actions">
           <button class="modal-btn cancel" @click="closeGroupDialog">Cancel</button>
           <button class="modal-btn primary" @click="saveGroupDialog">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======== 弹窗：管理标签 ======== -->
+    <div v-if="tagDialog.visible" class="modal-overlay" @click.self="closeTagDialog">
+      <div class="modal-box" style="max-width:360px">
+        <div class="modal-title">Manage Tags</div>
+        <div v-if="allTags.length === 0" class="tag-none" style="padding:8px 0">No tags yet. Create one below.</div>
+        <div v-for="t in allTags" :key="t.id" class="tag-mgr-row">
+          <span class="tag-mgr-swatch" :style="{ background: t.color }"></span>
+          <span class="tag-mgr-name">{{ t.name }}</span>
+          <button class="tag-mgr-del" @click="doDeleteTag(t.id)" title="Delete tag">×</button>
+        </div>
+        <div class="modal-field" style="margin-top:12px">
+          <label>New Tag</label>
+          <div style="display:flex;gap:8px">
+            <input v-model="tagDialog.name" placeholder="Tag name" style="flex:1" @keyup.enter="doSaveTag" />
+            <label class="color-swatch" :style="{ background: tagDialog.color }">
+              <input v-model="tagDialog.color" type="color" />
+            </label>
+            <button class="modal-btn primary" style="padding:4px 12px;font-size:12px" @click="doSaveTag">Create</button>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="modal-btn cancel" @click="closeTagDialog">Done</button>
         </div>
       </div>
     </div>
@@ -200,10 +256,12 @@ import TreeNode from './TreeNode.vue'
 
 interface Group { id: number; parent_id: number; name: string; remark: string }
 interface Connection { id: number; name: string; host: string; port: number; username: string; password: string; group_id: number }
+interface Tag { id: number; name: string; color: string }
 interface FlatOption { id: number; label: string }
 interface CtxMenu { visible: boolean; x: number; y: number; type: string; id: number }
-interface HostDialog { visible: boolean; editingId: number; name: string; host: string; port: number; username: string; password: string; groupId: number }
+interface HostDialog { visible: boolean; editingId: number; name: string; host: string; port: number; username: string; password: string; groupId: number; tagIds: number[] }
 interface GroupDialog { visible: boolean; editingId: number; name: string; parentId: number; remark: string }
+interface TagDialog { visible: boolean; name: string; color: string }
 
 const props = defineProps<{ collapsed: boolean }>()
 const emit = defineEmits<{ 'select-host': [config: Record<string, any>]; 'select-local': []; 'toggle': [] }>()
@@ -220,18 +278,42 @@ const ctxMenu = reactive<CtxMenu>({ visible: false, x: 0, y: 0, type: '', id: 0 
 const showHostPwd = ref(false)
 const hostDialog = reactive<HostDialog>({
   visible: false, editingId: 0,
-  name: '', host: '', port: 22, username: '', password: '', groupId: 0
+  name: '', host: '', port: 22, username: '', password: '', groupId: 0, tagIds: []
 })
 const groupDialog = reactive<GroupDialog>({
   visible: false, editingId: 0,
   name: '', parentId: 0, remark: ''
 })
+const tagDialog = reactive<TagDialog>({
+  visible: false, name: '', color: '#3fb950'
+})
+
+const allTags = ref<Tag[]>([])
+const hostTagsMap = ref<Map<number, Tag[]>>(new Map())
+const showQuickTag = ref(false)
+const newTag = reactive({ name: '', color: '#3fb950' })
 
 onMounted(() => { loadAll() })
 
 async function loadAll(): Promise<void> {
   try { connections.value = await invoke<Connection[]>('list_connections') } catch (_) { connections.value = [] }
   try { groups.value = await invoke<Group[]>('list_groups') } catch (_) { groups.value = [] }
+  try { allTags.value = await invoke<Tag[]>('list_tags') } catch (_) { allTags.value = [] }
+  // 加载所有 host 的标签
+  try {
+    const ids = connections.value.map(c => c.id)
+    if (ids.length > 0) {
+      const map = new Map<number, Tag[]>()
+      // 逐个加载（简单可靠）
+      for (const c of connections.value) {
+        try {
+          const tags = await invoke<Tag[]>('get_host_tags', { hostId: c.id })
+          map.set(c.id, tags)
+        } catch (_) { map.set(c.id, []) }
+      }
+      hostTagsMap.value = map
+    }
+  } catch (_) { hostTagsMap.value = new Map() }
 }
 
 function toggleGroup(id: number): void {
@@ -269,11 +351,11 @@ const groupSelectOptions = computed<FlatOption[]>(() => {
   return flatGroupOptions.value.filter(o => !excludeIds.has(o.id))
 })
 
-function openHostDialog(groupId = 0): void {
+async function openHostDialog(groupId = 0): Promise<void> {
   showAddMenu.value = false
   ctxMenu.visible = false
   Object.assign(hostDialog, {
-    visible: true, editingId: 0,
+    visible: true, editingId: 0, tagIds: [],
     name: '', host: '', port: 22, username: '', password: '', groupId
   })
 }
@@ -282,8 +364,11 @@ async function editHost(id: number): Promise<void> {
   ctxMenu.visible = false
   const c = connections.value.find(x => x.id === id)
   if (!c) return
+  // 加载该 host 的标签
+  let tagIds: number[] = []
+  try { const tags = await invoke<Tag[]>('get_host_tags', { hostId: id }); tagIds = tags.map(t => t.id) } catch (_) {}
   Object.assign(hostDialog, {
-    visible: true, editingId: c.id,
+    visible: true, editingId: c.id, tagIds,
     name: c.name || '', host: c.host, port: c.port || 22,
     username: c.username, password: c.password, groupId: c.group_id || 0
   })
@@ -292,19 +377,28 @@ async function editHost(id: number): Promise<void> {
 async function saveHostDialog(): Promise<void> {
   if (!hostDialog.host || !hostDialog.username) return
   try {
-    await invoke('save_connection', { config: {
+    const saved = await invoke<{ id: number }>('save_connection', { config: {
       id: hostDialog.editingId,
       name: hostDialog.name || `${hostDialog.username}@${hostDialog.host}`,
       host: hostDialog.host, port: hostDialog.port,
       username: hostDialog.username, password: hostDialog.password,
       group_id: hostDialog.groupId
     }})
+    // 保存标签关联
+    const hostId = saved.id
+    await invoke('set_host_tags', { hostId, tagIds: hostDialog.tagIds }).catch(() => {})
     closeHostDialog()
     await loadAll()
   } catch (e) { alert('Save failed: ' + e) }
 }
 
-function closeHostDialog(): void { hostDialog.visible = false; showHostPwd.value = false }
+function closeHostDialog(): void { hostDialog.visible = false; showHostPwd.value = false; showQuickTag.value = false }
+
+function toggleHostTag(tagId: number): void {
+  const idx = hostDialog.tagIds.indexOf(tagId)
+  if (idx >= 0) hostDialog.tagIds.splice(idx, 1)
+  else hostDialog.tagIds.push(tagId)
+}
 
 async function deleteHost(id: number): Promise<void> {
   ctxMenu.visible = false
@@ -340,6 +434,44 @@ async function saveGroupDialog(): Promise<void> {
 }
 
 function closeGroupDialog(): void { groupDialog.visible = false }
+
+// ---- 标签管理 ----
+
+function openTagDialog(): void {
+  tagDialog.visible = true
+  tagDialog.name = ''
+  tagDialog.color = '#3fb950'
+}
+
+function closeTagDialog(): void { tagDialog.visible = false }
+
+async function doSaveTag(): Promise<void> {
+  if (!tagDialog.name.trim()) return
+  try {
+    await invoke('save_tag', { name: tagDialog.name.trim(), color: tagDialog.color })
+    tagDialog.name = ''
+    await loadAll()
+  } catch (e) { alert('Failed: ' + e) }
+}
+
+async function doDeleteTag(id: number): Promise<void> {
+  if (!confirm('Delete this tag?')) return
+  try { await invoke('delete_tag', { id }); await loadAll() } catch (e) { alert('' + e) }
+}
+
+function quickAddTag(): void { showQuickTag.value = !showQuickTag.value }
+
+async function saveQuickTag(): Promise<void> {
+  if (!newTag.name.trim()) return
+  try {
+    const tag = await invoke<Tag>('save_tag', { name: newTag.name.trim(), color: newTag.color })
+    // 自动选中新标签
+    hostDialog.tagIds.push(tag.id)
+    newTag.name = ''
+    showQuickTag.value = false
+    await loadAll() // 刷新标签列表
+  } catch (e) { alert('Failed: ' + e) }
+}
 
 async function tryDeleteGroup(id: number): Promise<void> {
   ctxMenu.visible = false
@@ -434,4 +566,53 @@ if (typeof window !== 'undefined') {
 .password-wrap input { flex: 1; padding-right: 32px; }
 .eye-btn { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; background: transparent; border: none; border-radius: 4px; color: var(--color-text-tertiary); cursor: pointer; }
 .eye-btn:hover { color: var(--color-text-secondary); }
+
+/* ---- 标签 checkbox 样式 ---- */
+.tag-checkboxes { display: flex; flex-wrap: wrap; gap: 6px; }
+.tag-checkbox-label {
+  display: inline-flex; align-items: center; gap: 2px;
+  padding: 2px 8px; border-radius: 12px; font-size: 11px;
+  border: 1px solid; cursor: pointer; transition: all 0.15s;
+  user-select: none;
+}
+.tag-checkbox-label:hover { opacity: 0.85; }
+.tag-none { font-size: 11px; color: var(--color-text-tertiary); }
+.btn-tag-add {
+  margin-top: 6px; padding: 2px 8px; font-size: 11px;
+  background: transparent; border: 1px dashed var(--color-border-input);
+  border-radius: 4px; color: var(--color-text-tertiary); cursor: pointer;
+}
+.btn-tag-add:hover { border-color: var(--color-accent); color: var(--color-accent); }
+.quick-tag-row { display: flex; gap: 6px; margin-top: 6px; align-items: center; }
+.tag-name-input { flex: 1; min-width: 260px; padding: 4px 8px; font-size: 12px; background: var(--color-bg-input); border: 1px solid var(--color-border-input); border-radius: 4px; color: var(--color-text-primary); }
+.color-swatch {
+  width: 24px; height: 24px; border-radius: 50%;
+  border: 2px solid var(--color-border-input);
+  display: inline-flex; flex-shrink: 0; cursor: pointer;
+  position: relative; overflow: hidden;
+}
+.color-swatch input {
+  position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer;
+}
+
+/* ---- 标签管理弹窗 ---- */
+.tag-mgr-row {
+  display: flex; align-items: center; gap: 8px; padding: 6px 0;
+  border-bottom: 1px solid var(--color-border-secondary);
+}
+.tag-mgr-swatch { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.tag-mgr-name { flex: 1; font-size: 13px; color: var(--color-text-primary); }
+.tag-mgr-del {
+  width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;
+  background: transparent; border: none; border-radius: 4px; color: var(--color-text-tertiary);
+  cursor: pointer; font-size: 16px;
+}
+.tag-mgr-del:hover { background: var(--color-danger-btn); color: var(--color-text-white); }
+
+.btn-tags {
+  width: 24px; height: 24px; background: transparent; border: none; border-radius: 4px;
+  color: var(--color-text-secondary); cursor: pointer; font-size: 12px;
+  display: flex; align-items: center; justify-content: center;
+}
+.btn-tags:hover { background: var(--color-bg-hover-alt); color: var(--color-text-primary); }
 </style>

@@ -27,6 +27,15 @@ pub struct HostGroup {
     pub remark: String,
 }
 
+// ---- 标签结构体 ----
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Tag {
+    pub id: i64,
+    pub name: String,
+    pub color: String,
+}
+
 // ---- 数据库状态 ----
 
 pub struct DbState {
@@ -81,6 +90,29 @@ impl DbState {
             )",
             [],
         ).context("建 host_groups 表失败")?;
+
+        // --- tags 表 ---
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS tags (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                name       TEXT NOT NULL,
+                color      TEXT NOT NULL DEFAULT '#3fb950',
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )",
+            [],
+        ).context("建 tags 表失败")?;
+
+        // --- host_tags 关联表 ---
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS host_tags (
+                host_id INTEGER NOT NULL,
+                tag_id  INTEGER NOT NULL,
+                PRIMARY KEY (host_id, tag_id),
+                FOREIGN KEY (host_id) REFERENCES connections(id) ON DELETE CASCADE,
+                FOREIGN KEY (tag_id)  REFERENCES tags(id)       ON DELETE CASCADE
+            )",
+            [],
+        ).context("建 host_tags 表失败")?;
 
         Ok(Self {
             conn: Mutex::new(conn),
@@ -221,5 +253,116 @@ impl DbState {
             result.extend(self.collect_descendant_ids(conn, *child_id));
         }
         result
+    }
+
+    // ---- Tag CRUD ----
+
+    pub fn list_tags(&self) -> Result<Vec<Tag>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, color FROM tags ORDER BY name"
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(Tag {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                color: row.get(2)?,
+            })
+        })?;
+        let mut list = Vec::new();
+        for row in rows { list.push(row?); }
+        Ok(list)
+    }
+
+    pub fn save_tag(&self, name: &str, color: &str) -> Result<Tag> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO tags (name, color) VALUES (?, ?)",
+            rusqlite::params![name, color],
+        )?;
+        let id = conn.last_insert_rowid();
+        Ok(Tag { id, name: name.to_string(), color: color.to_string() })
+    }
+
+    pub fn delete_tag(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        // host_tags 由 ON DELETE CASCADE 自动清理
+        conn.execute("DELETE FROM tags WHERE id=?", [id])?;
+        Ok(())
+    }
+
+    // ---- Host-Tag 关联 ----
+
+    /// 获取某个 host 的所有标签
+    pub fn get_host_tags(&self, host_id: i64) -> Result<Vec<Tag>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT t.id, t.name, t.color FROM tags t
+             INNER JOIN host_tags ht ON t.id = ht.tag_id
+             WHERE ht.host_id = ?
+             ORDER BY t.name"
+        )?;
+        let rows = stmt.query_map([host_id], |row| {
+            Ok(Tag {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                color: row.get(2)?,
+            })
+        })?;
+        let mut list = Vec::new();
+        for row in rows { list.push(row?); }
+        Ok(list)
+    }
+
+    /// 批量获取多个 host 的标签（返回 host_id → Vec<Tag> 映射）
+    #[allow(dead_code)]
+    pub fn get_hosts_tags(&self, host_ids: &[i64]) -> Result<std::collections::HashMap<i64, Vec<Tag>>> {
+        if host_ids.is_empty() {
+            return Ok(std::collections::HashMap::new());
+        }
+        let conn = self.conn.lock().unwrap();
+        let placeholders: Vec<String> = host_ids.iter().map(|_| "?".to_string()).collect();
+        let sql = format!(
+            "SELECT ht.host_id, t.id, t.name, t.color FROM tags t
+             INNER JOIN host_tags ht ON t.id = ht.tag_id
+             WHERE ht.host_id IN ({})
+             ORDER BY t.name",
+            placeholders.join(",")
+        );
+        let params: Vec<rusqlite::types::Value> = host_ids
+            .iter()
+            .map(|&i| rusqlite::types::Value::from(i))
+            .collect();
+        let params_refs: Vec<&dyn rusqlite::types::ToSql> = params
+            .iter()
+            .map(|p| p as &dyn rusqlite::types::ToSql)
+            .collect();
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(params_refs.as_slice(), |row| {
+            Ok((row.get::<_, i64>(0)?, Tag {
+                id: row.get(1)?,
+                name: row.get(2)?,
+                color: row.get(3)?,
+            }))
+        })?;
+        let mut map: std::collections::HashMap<i64, Vec<Tag>> = std::collections::HashMap::new();
+        for row in rows {
+            let (host_id, tag) = row?;
+            map.entry(host_id).or_default().push(tag);
+        }
+        Ok(map)
+    }
+
+    /// 设置 host 的标签列表（全量替换）
+    pub fn set_host_tags(&self, host_id: i64, tag_ids: &[i64]) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM host_tags WHERE host_id=?", [host_id])?;
+        for tag_id in tag_ids {
+            conn.execute(
+                "INSERT OR IGNORE INTO host_tags (host_id, tag_id) VALUES (?, ?)",
+                rusqlite::params![host_id, tag_id],
+            )?;
+        }
+        Ok(())
     }
 }
