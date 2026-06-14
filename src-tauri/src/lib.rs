@@ -324,6 +324,16 @@ fn delete_tag(db: tauri::State<'_, DbState>, id: i64) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn update_tag(
+    db: tauri::State<'_, DbState>,
+    id: i64,
+    name: String,
+    color: String,
+) -> Result<(), String> {
+    db.update_tag(id, &name, &color).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn get_host_tags(db: tauri::State<'_, DbState>, host_id: i64) -> Result<Vec<Tag>, String> {
     db.get_host_tags(host_id).map_err(|e| e.to_string())
 }
@@ -383,6 +393,7 @@ pub fn run() {
             list_tags,
             save_tag,
             delete_tag,
+            update_tag,
             get_host_tags,
             set_host_tags,
         ])

@@ -291,6 +291,15 @@ impl DbState {
         Ok(())
     }
 
+    pub fn update_tag(&self, id: i64, name: &str, color: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE tags SET name=?, color=? WHERE id=?",
+            rusqlite::params![name, color, id],
+        )?;
+        Ok(())
+    }
+
     // ---- Host-Tag 关联 ----
 
     /// 获取某个 host 的所有标签
