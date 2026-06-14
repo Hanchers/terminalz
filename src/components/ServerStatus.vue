@@ -6,7 +6,7 @@
         <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
           <path d="M22 12c0 5.523-4.477 10-10 10S2 17.523 2 12 6.477 2 12 2s10 4.477 10 10zm-2 0a8 8 0 10-16 0 8 8 0 0016 0zm-8-6v6l4 2.5"/>
         </svg>
-        <span>Status</span>
+        <span>{{ $t('status.title') }}</span>
         <span v-if="polling" class="poll-dot"></span>
       </div>
 
@@ -14,20 +14,20 @@
 
       <template v-else-if="info">
         <div class="info-card host-card">
-          <div class="card-label">Hostname</div>
+          <div class="card-label">{{ $t('status.hostname') }}</div>
           <div class="card-value host-value">{{ info.hostname }}</div>
         </div>
         <div class="info-card">
-          <div class="card-label">System</div>
+          <div class="card-label">{{ $t('status.system') }}</div>
           <div class="card-value sys-value">{{ info.os_name }}</div>
-          <div class="card-sub">Kernel: {{ info.kernel }}</div>
+          <div class="card-sub">{{ $t('status.kernel') }}{{ info.kernel }}</div>
         </div>
         <div class="info-card">
-          <div class="card-label">Uptime</div>
+          <div class="card-label">{{ $t('status.uptime') }}</div>
           <div class="card-value grey">{{ info.uptime }}</div>
         </div>
         <div class="info-card">
-          <div class="card-label">CPU</div>
+          <div class="card-label">{{ $t('status.cpu') }}</div>
           <div class="gauge-row">
             <span class="gauge-pct" :style="{ color: cpuColor }">{{ info.cpu_pct.toFixed(1) }}%</span>
             <div class="gauge-track">
@@ -42,7 +42,7 @@
           </div>
         </div>
         <div class="info-card">
-          <div class="card-label">Memory</div>
+          <div class="card-label">{{ $t('status.memory') }}</div>
           <div class="gauge-row">
             <span class="gauge-pct" :style="{ color: memColor }">{{ info.mem_pct.toFixed(1) }}%</span>
             <div class="gauge-track">
@@ -57,7 +57,7 @@
           </div>
         </div>
         <div class="info-card">
-          <div class="card-label">Disks</div>
+          <div class="card-label">{{ $t('status.disks') }}</div>
           <div
             v-for="d in info.disks"
             :key="d.mount"
@@ -78,10 +78,10 @@
             </div>
           </div>
         </div>
-        <div class="status-footer">Updated {{ lastUpdate }}</div>
+        <div class="status-footer">{{ $t('status.updated') }}{{ lastUpdate }}</div>
       </template>
 
-      <div v-else class="status-loading">Loading...</div>
+      <div v-else class="status-loading">{{ $t('status.loading') }}</div>
     </template>
 
     <!-- 收起模式：紧凑指标 -->

@@ -13,7 +13,7 @@
       <button
         class="edge-toggle toggle-left"
         @click="sidebarCollapsed = !sidebarCollapsed"
-        :title="sidebarCollapsed ? '展开侧栏' : '收起侧栏'"
+        :title="sidebarCollapsed ? $t('app.expandSidebar') : $t('app.collapseSidebar')"
       >
         <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
           <path v-if="sidebarCollapsed" d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/>
@@ -35,7 +35,7 @@
         v-if="isConnected"
         class="edge-toggle toggle-right"
         @click="statusCollapsed = !statusCollapsed"
-        :title="statusCollapsed ? '展开状态栏' : '收起状态栏'"
+        :title="statusCollapsed ? $t('app.expandStatus') : $t('app.collapseStatus')"
       >
         <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
           <path v-if="statusCollapsed" d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/>

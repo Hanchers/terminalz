@@ -10,7 +10,7 @@
         <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
           <path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"/>
         </svg>
-        <span v-if="!collapsed">Hosts</span>
+        <span v-if="!collapsed">{{ $t('sidebar.hosts') }}</span>
       </div>
       <div
         class="menu-item"
@@ -20,29 +20,29 @@
         <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
           <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.33-.02-.64-.06-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.49.49 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.3-.06.61-.06.94s.02.64.06.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1115.6 12 3.605 3.605 0 0112 15.6z"/>
         </svg>
-        <span v-if="!collapsed">Settings</span>
+        <span v-if="!collapsed">{{ $t('sidebar.settings') }}</span>
       </div>
     </div>
 
     <!-- Hosts 树形面板 -->
     <div v-if="!collapsed && activeMenu === 'hosts'" class="hosts-panel">
       <div class="hosts-header">
-        <span>Hosts</span>
+        <span>{{ $t('sidebar.hosts') }}</span>
         <div class="header-actions">
-          <button class="btn-refresh" @click="loadAll" title="Refresh">↻</button>
-          <button class="btn-tags" @click.stop="openTagDialog" title="Manage Tags">🏷</button>
-          <button class="btn-add" @click.stop="openLocalTerminal" title="Local Terminal">💻</button>
-          <button class="btn-add" @click.stop="openAddMenu" title="Add">+</button>
+          <button class="btn-refresh" @click="loadAll" :title="$t('sidebar.refresh')">↻</button>
+          <button class="btn-tags" @click.stop="openTagDialog" :title="$t('sidebar.manageTags')">🏷</button>
+          <button class="btn-add" @click.stop="openLocalTerminal" :title="$t('sidebar.localTerminal')">💻</button>
+          <button class="btn-add" @click.stop="openAddMenu" :title="$t('sidebar.add')">+</button>
           <div v-if="showAddMenu" class="mini-dropdown" @click.stop>
-            <div class="mini-item" @click="openGroupDialog()">New Group</div>
-            <div class="mini-item" @click="openHostDialog()">New Host</div>
+            <div class="mini-item" @click="openGroupDialog()">{{ $t('sidebar.newGroup') }}</div>
+            <div class="mini-item" @click="openHostDialog()">{{ $t('sidebar.newHost') }}</div>
           </div>
         </div>
       </div>
 
       <!-- 无数据显示 -->
       <div v-if="!groups.length && !connections.length" class="hosts-empty">
-        No hosts or groups — click + to add
+        {{ $t('sidebar.noHosts') }}
       </div>
 
       <!-- 树形列表 -->
@@ -65,9 +65,15 @@
 
     <!-- Settings 面板 -->
     <div v-if="!collapsed && activeMenu === 'settings'" class="settings-panel">
-      <div class="settings-header">Settings</div>
+      <div class="settings-header">{{ $t('sidebar.settings') }}</div>
       <div class="settings-section">
-        <div class="settings-label">Theme</div>
+        <div class="settings-label">{{ $t('sidebar.language') }}</div>
+        <select class="settings-select" :value="currentLocale" @change="switchLanguage(($event.target as HTMLSelectElement).value as SupportedLocale)">
+          <option v-for="l in languageOptions" :key="l.id" :value="l.id">{{ l.icon }} {{ l.name }}</option>
+        </select>
+      </div>
+      <div class="settings-section">
+        <div class="settings-label">{{ $t('sidebar.theme') }}</div>
         <div class="theme-options">
           <button
             v-for="t in themes"
@@ -86,32 +92,32 @@
     <!-- ======== 弹窗：编辑/新建 Host ======== -->
     <div v-if="hostDialog.visible" class="modal-overlay" @click.self="closeHostDialog">
       <div class="modal-box">
-        <div class="modal-title">{{ hostDialog.editingId ? 'Edit' : 'New' }} Host</div>
+        <div class="modal-title">{{ hostDialog.editingId ? $t('sidebar.hostDialog.edit') : $t('sidebar.hostDialog.new') }}</div>
         <div class="modal-field">
-          <label>Name</label>
-          <input v-model="hostDialog.name" placeholder="My Server" @keyup.enter="saveHostDialog" />
+          <label>{{ $t('sidebar.hostDialog.name') }}</label>
+          <input v-model="hostDialog.name" :placeholder="$t('sidebar.hostDialog.namePlaceholder')" @keyup.enter="saveHostDialog" />
         </div>
         <div class="modal-field">
-          <label>Host</label>
-          <input v-model="hostDialog.host" placeholder="192.168.1.1" @keyup.enter="saveHostDialog" />
+          <label>{{ $t('sidebar.hostDialog.host') }}</label>
+          <input v-model="hostDialog.host" :placeholder="$t('sidebar.hostDialog.hostPlaceholder')" @keyup.enter="saveHostDialog" />
         </div>
         <div class="modal-row">
           <div class="modal-field small">
-            <label>Port</label>
+            <label>{{ $t('sidebar.hostDialog.port') }}</label>
             <input v-model.number="hostDialog.port" type="number" placeholder="22" />
           </div>
           <div class="modal-field">
-            <label>Username</label>
-            <input v-model="hostDialog.username" placeholder="root" @keyup.enter="saveHostDialog" />
+            <label>{{ $t('sidebar.hostDialog.username') }}</label>
+            <input v-model="hostDialog.username" :placeholder="$t('sidebar.hostDialog.usernamePlaceholder')" @keyup.enter="saveHostDialog" />
           </div>
         </div>
         <div class="modal-field">
-          <label>Password</label>
+          <label>{{ $t('sidebar.hostDialog.password') }}</label>
           <div class="password-wrap">
             <input
               v-model="hostDialog.password"
               :type="showHostPwd ? 'text' : 'password'"
-              placeholder="password"
+              :placeholder="$t('sidebar.hostDialog.passwordPlaceholder')"
               @keyup.enter="saveHostDialog"
             />
             <button class="eye-btn" type="button" @click="showHostPwd = !showHostPwd" tabindex="-1">
@@ -125,16 +131,16 @@
           </div>
         </div>
         <div class="modal-field">
-          <label>Group</label>
+          <label>{{ $t('sidebar.hostDialog.group') }}</label>
           <select v-model="hostDialog.groupId">
-            <option :value="0">(No Group)</option>
+            <option :value="0">{{ $t('sidebar.hostDialog.noGroup') }}</option>
             <option v-for="g in flatGroupOptions" :key="g.id" :value="g.id">
               {{ g.label }}
             </option>
           </select>
         </div>
         <div class="modal-field">
-          <label>Tags</label>
+          <label>{{ $t('sidebar.hostDialog.tags') }}</label>
           <div class="tag-checkboxes">
             <label
               v-for="t in allTags"
@@ -150,20 +156,20 @@
               />
               {{ t.name }}
             </label>
-            <span v-if="allTags.length === 0" class="tag-none">No tags created yet — use Manage Tags</span>
+            <span v-if="allTags.length === 0" class="tag-none">{{ $t('sidebar.hostDialog.noTags') }}</span>
           </div>
-          <button class="btn-tag-add" @click="quickAddTag" title="Quick add tag">+ New Tag</button>
+          <button class="btn-tag-add" @click="quickAddTag">{{ $t('sidebar.hostDialog.newTag') }}</button>
           <div v-if="showQuickTag" class="quick-tag-row">
-            <input v-model="newTag.name" placeholder="Tag name" class="tag-name-input" @keyup.enter="saveQuickTag" />
+            <input v-model="newTag.name" :placeholder="$t('sidebar.hostDialog.tagPlaceholder')" class="tag-name-input" @keyup.enter="saveQuickTag" />
             <label class="color-swatch" :style="{ background: newTag.color }">
               <input v-model="newTag.color" type="color" />
             </label>
-            <button class="modal-btn primary" style="padding:4px 10px;font-size:12px" @click="saveQuickTag">Add</button>
+            <button class="modal-btn primary" style="padding:4px 10px;font-size:12px" @click="saveQuickTag">{{ $t('sidebar.hostDialog.tagCreate') }}</button>
           </div>
         </div>
         <div class="modal-actions">
-          <button class="modal-btn cancel" @click="closeHostDialog">Cancel</button>
-          <button class="modal-btn primary" @click="saveHostDialog">Save</button>
+          <button class="modal-btn cancel" @click="closeHostDialog">{{ $t('sidebar.hostDialog.cancel') }}</button>
+          <button class="modal-btn primary" @click="saveHostDialog">{{ $t('sidebar.hostDialog.save') }}</button>
         </div>
       </div>
     </div>
@@ -171,27 +177,27 @@
     <!-- ======== 弹窗：编辑/新建 Group ======== -->
     <div v-if="groupDialog.visible" class="modal-overlay" @click.self="closeGroupDialog">
       <div class="modal-box">
-        <div class="modal-title">{{ groupDialog.editingId ? 'Edit' : 'New' }} Group</div>
+        <div class="modal-title">{{ groupDialog.editingId ? $t('sidebar.groupDialog.edit') : $t('sidebar.groupDialog.new') }}</div>
         <div class="modal-field">
-          <label>Name</label>
+          <label>{{ $t('sidebar.groupDialog.name') }}</label>
           <input v-model="groupDialog.name" placeholder="Production" @keyup.enter="saveGroupDialog" />
         </div>
         <div class="modal-field">
-          <label>Parent Group</label>
+          <label>{{ $t('sidebar.groupDialog.parentGroup') }}</label>
           <select v-model="groupDialog.parentId">
-            <option :value="0">(Root)</option>
+            <option :value="0">{{ $t('sidebar.groupDialog.root') }}</option>
             <option v-for="g in groupSelectOptions" :key="g.id" :value="g.id" :disabled="g.disabled">
               {{ g.label }}
             </option>
           </select>
         </div>
         <div class="modal-field">
-          <label>Remark</label>
-          <textarea v-model="groupDialog.remark" placeholder="Optional notes..." rows="2"></textarea>
+          <label>{{ $t('sidebar.groupDialog.remark') }}</label>
+          <textarea v-model="groupDialog.remark" :placeholder="$t('sidebar.groupDialog.remarkPlaceholder')" rows="2"></textarea>
         </div>
         <div class="modal-actions">
-          <button class="modal-btn cancel" @click="closeGroupDialog">Cancel</button>
-          <button class="modal-btn primary" @click="saveGroupDialog">Save</button>
+          <button class="modal-btn cancel" @click="closeGroupDialog">{{ $t('sidebar.groupDialog.cancel') }}</button>
+          <button class="modal-btn primary" @click="saveGroupDialog">{{ $t('sidebar.groupDialog.save') }}</button>
         </div>
       </div>
     </div>
@@ -199,25 +205,25 @@
     <!-- ======== 弹窗：管理标签 ======== -->
     <div v-if="tagDialog.visible" class="modal-overlay" @click.self="closeTagDialog">
       <div class="modal-box" style="max-width:360px">
-        <div class="modal-title">Manage Tags</div>
-        <div v-if="allTags.length === 0" class="tag-none" style="padding:8px 0">No tags yet. Create one below.</div>
+        <div class="modal-title">{{ $t('sidebar.tagDialog.title') }}</div>
+        <div v-if="allTags.length === 0" class="tag-none" style="padding:8px 0">{{ $t('sidebar.tagDialog.none') }}</div>
         <div v-for="t in allTags" :key="t.id" class="tag-mgr-row">
           <span class="tag-mgr-swatch" :style="{ background: t.color }"></span>
           <span class="tag-mgr-name">{{ t.name }}</span>
           <button class="tag-mgr-del" @click="doDeleteTag(t.id)" title="Delete tag">×</button>
         </div>
         <div class="modal-field" style="margin-top:12px">
-          <label>New Tag</label>
+          <label>{{ $t('sidebar.tagDialog.name') }}</label>
           <div style="display:flex;gap:8px">
-            <input v-model="tagDialog.name" placeholder="Tag name" style="flex:1" @keyup.enter="doSaveTag" />
+            <input v-model="tagDialog.name" :placeholder="$t('sidebar.hostDialog.tagPlaceholder')" style="flex:1" @keyup.enter="doSaveTag" />
             <label class="color-swatch" :style="{ background: tagDialog.color }">
               <input v-model="tagDialog.color" type="color" />
             </label>
-            <button class="modal-btn primary" style="padding:4px 12px;font-size:12px" @click="doSaveTag">Create</button>
+            <button class="modal-btn primary" style="padding:4px 12px;font-size:12px" @click="doSaveTag">{{ $t('sidebar.tagDialog.create') }}</button>
           </div>
         </div>
         <div class="modal-actions">
-          <button class="modal-btn cancel" @click="closeTagDialog">Done</button>
+          <button class="modal-btn cancel" @click="closeTagDialog">{{ $t('sidebar.tagDialog.done') }}</button>
         </div>
       </div>
     </div>
@@ -229,20 +235,20 @@
       :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
     >
       <template v-if="ctxMenu.type === 'group'">
-        <div class="ctx-item" @click="editGroup(ctxMenu.id)">Edit Group</div>
-        <div class="ctx-item" @click="openHostDialog(ctxMenu.id)">New Host</div>
-        <div class="ctx-item" @click="openGroupDialog(ctxMenu.id)">New Subgroup</div>
+        <div class="ctx-item" @click="editGroup(ctxMenu.id)">{{ $t('sidebar.ctxMenu.editGroup') }}</div>
+        <div class="ctx-item" @click="openHostDialog(ctxMenu.id)">{{ $t('sidebar.ctxMenu.newHost') }}</div>
+        <div class="ctx-item" @click="openGroupDialog(ctxMenu.id)">{{ $t('sidebar.ctxMenu.newSubgroup') }}</div>
         <div class="ctx-sep"></div>
-        <div class="ctx-item ctx-danger" @click="tryDeleteGroup(ctxMenu.id)">Delete Group</div>
+        <div class="ctx-item ctx-danger" @click="tryDeleteGroup(ctxMenu.id)">{{ $t('sidebar.ctxMenu.deleteGroup') }}</div>
       </template>
       <template v-else-if="ctxMenu.type === 'host'">
-        <div class="ctx-item" @click="editHost(ctxMenu.id)">Edit Host</div>
+        <div class="ctx-item" @click="editHost(ctxMenu.id)">{{ $t('sidebar.ctxMenu.editHost') }}</div>
         <div class="ctx-sep"></div>
-        <div class="ctx-item ctx-danger" @click="deleteHost(ctxMenu.id)">Delete Host</div>
+        <div class="ctx-item ctx-danger" @click="deleteHost(ctxMenu.id)">{{ $t('sidebar.ctxMenu.deleteHost') }}</div>
       </template>
       <template v-else>
-        <div class="ctx-item" @click="openGroupDialog()">New Group</div>
-        <div class="ctx-item" @click="openHostDialog()">New Host</div>
+        <div class="ctx-item" @click="openGroupDialog()">{{ $t('sidebar.ctxMenu.newGroup') }}</div>
+        <div class="ctx-item" @click="openHostDialog()">{{ $t('sidebar.ctxMenu.newHost') }}</div>
       </template>
     </div>
   </div>
@@ -250,14 +256,18 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { invoke } from '@tauri-apps/api/core'
 import { currentTheme, themes, setTheme } from '../themes/index'
+import { locales, saveLocale, type SupportedLocale } from '../i18n'
 import TreeNode from './TreeNode.vue'
+
+const { t, locale } = useI18n()
 
 interface Group { id: number; parent_id: number; name: string; remark: string }
 interface Connection { id: number; name: string; host: string; port: number; username: string; password: string; group_id: number }
 interface Tag { id: number; name: string; color: string }
-interface FlatOption { id: number; label: string }
+interface FlatOption { id: number; label: string; disabled?: boolean }
 interface CtxMenu { visible: boolean; x: number; y: number; type: string; id: number }
 interface HostDialog { visible: boolean; editingId: number; name: string; host: string; port: number; username: string; password: string; groupId: number; tagIds: number[] }
 interface GroupDialog { visible: boolean; editingId: number; name: string; parentId: number; remark: string }
@@ -272,6 +282,16 @@ const connections = ref<Connection[]>([])
 const groups = ref<Group[]>([])
 const collapsedGroups = ref(new Set<number>())
 const showAddMenu = ref(false)
+
+// ---- 主题 ----
+
+const languageOptions = locales
+const currentLocale = computed(() => locale.value as SupportedLocale)
+
+function switchLanguage(id: SupportedLocale): void {
+  locale.value = id
+  saveLocale(id)
+}
 
 const ctxMenu = reactive<CtxMenu>({ visible: false, x: 0, y: 0, type: '', id: 0 })
 
@@ -389,7 +409,7 @@ async function saveHostDialog(): Promise<void> {
     await invoke('set_host_tags', { hostId, tagIds: hostDialog.tagIds }).catch(() => {})
     closeHostDialog()
     await loadAll()
-  } catch (e) { alert('Save failed: ' + e) }
+  } catch (e) { alert(t('sidebar.error.saveFailed') + e) }
 }
 
 function closeHostDialog(): void { hostDialog.visible = false; showHostPwd.value = false; showQuickTag.value = false }
@@ -403,7 +423,7 @@ function toggleHostTag(tagId: number): void {
 async function deleteHost(id: number): Promise<void> {
   ctxMenu.visible = false
   if (!confirm('Delete this host?')) return
-  try { await invoke('delete_connection', { id }); await loadAll() } catch (e) { alert('' + e) }
+  try { await invoke('delete_connection', { id }); await loadAll() } catch (e) { alert(String(e)) }
 }
 
 function openGroupDialog(parentId = 0): void {
@@ -430,7 +450,7 @@ async function saveGroupDialog(): Promise<void> {
     }})
     closeGroupDialog()
     await loadAll()
-  } catch (e) { alert('Save failed: ' + e) }
+  } catch (e) { alert(t('sidebar.error.saveFailed') + e) }
 }
 
 function closeGroupDialog(): void { groupDialog.visible = false }
@@ -451,12 +471,12 @@ async function doSaveTag(): Promise<void> {
     await invoke('save_tag', { name: tagDialog.name.trim(), color: tagDialog.color })
     tagDialog.name = ''
     await loadAll()
-  } catch (e) { alert('Failed: ' + e) }
+  } catch (e) { alert(t('sidebar.error.failed') + e) }
 }
 
 async function doDeleteTag(id: number): Promise<void> {
-  if (!confirm('Delete this tag?')) return
-  try { await invoke('delete_tag', { id }); await loadAll() } catch (e) { alert('' + e) }
+  if (!confirm(t('sidebar.tagDialog.deleteConfirm'))) return
+  try { await invoke('delete_tag', { id }); await loadAll() } catch (e) { alert(String(e)) }
 }
 
 function quickAddTag(): void { showQuickTag.value = !showQuickTag.value }
@@ -470,7 +490,7 @@ async function saveQuickTag(): Promise<void> {
     newTag.name = ''
     showQuickTag.value = false
     await loadAll() // 刷新标签列表
-  } catch (e) { alert('Failed: ' + e) }
+  } catch (e) { alert(t('sidebar.error.failed') + e) }
 }
 
 async function tryDeleteGroup(id: number): Promise<void> {
@@ -526,6 +546,13 @@ if (typeof window !== 'undefined') {
 .settings-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 .settings-header { padding: 10px 12px; font-size: 11px; font-weight: 600; color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--color-border-secondary); }
 .settings-section { padding: 12px; }
+.settings-select {
+  width: 100%; padding: 8px 10px; margin-top: 4px;
+  font-size: 13px; background: var(--color-bg-input);
+  border: 1px solid var(--color-border-input); border-radius: 6px;
+  color: var(--color-text-primary); outline: none; cursor: pointer;
+}
+.settings-select:focus { border-color: var(--color-accent); }
 .settings-label { font-size: 11px; color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
 .theme-options { display: flex; flex-direction: column; gap: 4px; }
 .theme-opt { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: transparent; border: 1px solid var(--color-border-secondary); border-radius: 6px; color: var(--color-text-secondary); font-size: 13px; cursor: pointer; transition: all 0.15s; text-align: left; }

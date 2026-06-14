@@ -16,6 +16,7 @@
         :groups="groups" :connections="connections"
         :selected-id="selectedId" :parent-id="g.id" :depth="depth + 1"
         :collapsed-groups="collapsedGroups"
+        :host-tags="hostTags"
         @toggle-group="(id) => $emit('toggle-group', id)"
         @select-host="(h) => $emit('select-host', h)"
         @ctx-group="(id, e) => $emit('ctx-group', id, e)"

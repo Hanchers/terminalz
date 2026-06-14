@@ -6,15 +6,15 @@
         <svg viewBox="0 0 24 24" width="12" height="12" fill="#3fb950">
           <circle cx="12" cy="12" r="4"/>
         </svg>
-        <span>{{ mode === 'local' ? 'Local' : host }}</span>
+        <span>{{ mode === 'local' ? $t('terminal.local') : host }}</span>
       </div>
       <div class="tab-actions">
-        <button v-if="mode !== 'local'" @click="showFileTransfer = true" class="tab-btn" title="Upload Files">
+        <button v-if="mode !== 'local'" @click="showFileTransfer = true" class="tab-btn" :title="$t('terminal.uploadFiles')">
           <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
             <path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/>
           </svg>
         </button>
-        <button @click="disconnect" class="tab-btn close-btn" title="Disconnect">
+        <button @click="disconnect" class="tab-btn close-btn" :title="$t('terminal.disconnect')">
           <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
             <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
           </svg>
@@ -33,23 +33,23 @@
           </svg>
         </div>
         <h1>TerminalZ</h1>
-        <p class="welcome-sub">Secure SSH Terminal &amp; File Manager</p>
+        <p class="welcome-sub">{{ $t('terminal.welcome.subtitle') }}</p>
         <div class="welcome-hint">
           <span class="hint-arrow">←</span>
-          <span>Select a host from the sidebar to connect</span>
+          <span>{{ $t('terminal.welcome.hint') }}</span>
         </div>
         <div class="welcome-shortcuts">
           <div class="sc-item">
             <kbd>Hosts</kbd>
-            <span>Manage connections &amp; groups</span>
+            <span>{{ $t('terminal.welcome.scHosts') }}</span>
           </div>
           <div class="sc-item">
             <kbd>Ctrl</kbd> + <kbd>U</kbd>
-            <span>Upload files</span>
+            <span>{{ $t('terminal.welcome.scUpload') }}</span>
           </div>
           <div class="sc-item">
             <kbd>Settings</kbd>
-            <span>Switch theme</span>
+            <span>{{ $t('terminal.welcome.scTheme') }}</span>
           </div>
         </div>
       </div>
@@ -58,20 +58,20 @@
     <!-- 连接表单覆盖层 -->
     <div v-if="!connected && prefill && mode !== 'local'" class="connect-overlay">
       <div class="connect-form">
-        <h2>SSH 远程连接</h2>
+        <h2>{{ $t('terminal.form.title') }}</h2>
         <div class="form-group">
-          <input v-model="name" placeholder="连接名称 (可选)" @keyup.enter="doConnect" />
+          <input v-model="name" :placeholder="$t('terminal.form.namePlaceholder')" @keyup.enter="doConnect" />
         </div>
         <div class="form-group">
-          <input v-model="host" placeholder="主机地址" @keyup.enter="doConnect" />
-          <input v-model.number="port" placeholder="端口" type="number" style="max-width:100px" @keyup.enter="doConnect" />
+          <input v-model="host" :placeholder="$t('terminal.form.hostPlaceholder')" @keyup.enter="doConnect" />
+          <input v-model.number="port" :placeholder="$t('terminal.form.portPlaceholder')" type="number" style="max-width:100px" @keyup.enter="doConnect" />
         </div>
         <div class="form-group">
-          <input v-model="username" placeholder="用户名" @keyup.enter="doConnect" />
+          <input v-model="username" :placeholder="$t('terminal.form.usernamePlaceholder')" @keyup.enter="doConnect" />
           <div class="password-wrap">
             <input
               v-model="password"
-              placeholder="密码"
+              :placeholder="$t('terminal.form.passwordPlaceholder')"
               :type="showPassword ? 'text' : 'password'"
               @keyup.enter="doConnect"
             />
@@ -87,9 +87,9 @@
         </div>
         <div class="btn-row">
           <button class="btn-connect" @click="doConnect" :disabled="connecting">
-            {{ connecting ? '连接中...' : '连接' }}
+            {{ connecting ? $t('terminal.form.connecting') : $t('terminal.form.connect') }}
           </button>
-          <button class="btn-save" @click="doSave" :disabled="!canSave">💾 保存</button>
+          <button class="btn-save" @click="doSave" :disabled="!canSave">{{ $t('terminal.form.save') }}</button>
         </div>
         <p v-if="error" class="error">{{ error }}</p>
       </div>
@@ -105,12 +105,15 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import '@xterm/xterm/css/xterm.css';
 import FileTransfer from './FileTransfer.vue';
+
+const { t } = useI18n();
 
 interface HostPrefill { id?: number; name?: string; host: string; port: number; username: string; password: string }
 
@@ -227,7 +230,7 @@ async function doConnect() {
 
       window.addEventListener('resize', () => fitAddon?.fit());
     } catch (e) {
-      error.value = `启动本地终端失败: ${e}`;
+      error.value = `${t('terminal.error.localStartFailed')}${e}`;
       cleanupTerminal();
     } finally {
       connecting.value = false;
@@ -237,7 +240,7 @@ async function doConnect() {
 
   // ---- SSH 远程连接 ----
   if (!host.value || !username.value || !password.value) {
-    error.value = '请填写主机地址、用户名和密码';
+    error.value = t('terminal.error.fillRequired');
     return;
   }
 
@@ -280,7 +283,7 @@ async function doConnect() {
 
     window.addEventListener('resize', () => fitAddon?.fit());
   } catch (e) {
-    error.value = `连接失败: ${e}`;
+    error.value = `${t('terminal.error.connectFailed')}${e}`;
     cleanupTerminal();
   } finally {
     connecting.value = false;
@@ -318,10 +321,10 @@ async function doSave() {
     };
     const saved = await invoke<{ id: number }>('save_connection', { config });
     editingId.value = saved.id;
-    error.value = '已保存 ✓';
+    error.value = t('terminal.error.saved');
     setTimeout(() => { error.value = ''; }, 1500);
   } catch (e) {
-    error.value = `保存失败: ${e}`;
+    error.value = `${t('terminal.error.saveFailed')}${e}`;
   }
 }
 
