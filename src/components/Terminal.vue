@@ -60,15 +60,27 @@
       <div class="connect-form">
         <h2>{{ $t('terminal.form.title') }}</h2>
         <div class="form-group">
-          <input v-model="name" :placeholder="$t('terminal.form.namePlaceholder')" @keyup.enter="doConnect" />
+          <input v-model="name" :placeholder="$t('terminal.form.namePlaceholder')" readonly class="input-readonly" />
         </div>
         <div class="form-group">
-          <input v-model="host" :placeholder="$t('terminal.form.hostPlaceholder')" @keyup.enter="doConnect" />
-          <input v-model.number="port" :placeholder="$t('terminal.form.portPlaceholder')" type="number" style="max-width:100px" @keyup.enter="doConnect" />
+          <input v-model="host" :placeholder="$t('terminal.form.hostPlaceholder')" readonly class="input-readonly" />
+          <input v-model.number="port" :placeholder="$t('terminal.form.portPlaceholder')" type="number" readonly class="input-readonly" style="max-width:100px" />
         </div>
         <div class="form-group">
-          <input v-model="username" :placeholder="$t('terminal.form.usernamePlaceholder')" readonly class="input-readonly" @keyup.enter="doConnect" />
-          <input v-model="password" :placeholder="$t('terminal.form.passwordPlaceholder')" readonly class="input-readonly" type="password" @keyup.enter="doConnect" />
+          <label class="form-label">{{ $t('terminal.form.remark') }}</label>
+          <div class="input-readonly remark-field">{{ remark || '-' }}</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">{{ $t('terminal.form.tags') }}</label>
+          <div class="tag-list">
+            <span v-if="tags.length === 0" class="tag-none">-</span>
+            <span
+              v-for="t in tags"
+              :key="t.id"
+              class="tag-badge"
+              :style="{ background: t.color }"
+            >{{ t.name }}</span>
+          </div>
         </div>
         <div class="btn-row">
           <button class="btn-connect" @click="doConnect" :disabled="connecting">
@@ -100,6 +112,7 @@ import FileTransfer from './FileTransfer.vue';
 const { t } = useI18n();
 
 interface HostPrefill { id?: number; name?: string; host: string; port: number; username: string; password: string; remark?: string }
+interface Tag { id: number; name: string; color: string }
 
 const props = defineProps<{ prefill: HostPrefill | null; mode: 'ssh' | 'local' | null }>()
 const emit = defineEmits<{ 'connection-change': [connected: boolean] }>()
@@ -114,6 +127,8 @@ const host = ref('');
 const port = ref(22);
 const username = ref('');
 const password = ref('');
+const remark = ref('');
+const tags = ref<Tag[]>([]);
 const termContainer = ref<HTMLDivElement | null>(null);
 const showFileTransfer = ref(false);
 
@@ -123,14 +138,21 @@ let unlisten: (() => void) | null = null;
 
 // ---- 外部 prefill ---
 
-watch(() => props.prefill, (val: HostPrefill | null) => {
+watch(() => props.prefill, async (val: HostPrefill | null) => {
   if (val) {
     name.value = val.name || '';
     host.value = val.host || '';
     port.value = val.port || 22;
     username.value = val.username || '';
     password.value = val.password || '';
+    remark.value = val.remark || '';
     error.value = '';
+    // load tags for this host
+    if (val.id) {
+      try { tags.value = await invoke<Tag[]>('get_host_tags', { hostId: val.id }) } catch (_) { tags.value = [] }
+    } else {
+      tags.value = []
+    }
   }
 }, { deep: true })
 
@@ -523,6 +545,46 @@ input[type='number']::-webkit-outer-spin-button {
 .input-readonly {
   opacity: 0.65;
   cursor: default;
+}
+
+.form-label {
+  display: block;
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.remark-field {
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  border-radius: 4px;
+  min-height: 20px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-height: 20px;
+}
+
+.tag-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 8px;
+  font-size: 11px;
+  color: #fff;
+  white-space: nowrap;
+}
+
+.tag-none {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
 }
 
 .btn-row {
