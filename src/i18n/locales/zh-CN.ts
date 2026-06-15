@@ -32,6 +32,8 @@ export default {
       tagPlaceholder: '标签名称',
       tagCreate: '创建',
       noGroup: '(无分组)',
+      remark: '备注',
+      remarkPlaceholder: '可选备注信息...',
       namePlaceholder: 'My Server',
       hostPlaceholder: '192.168.1.1',
       usernamePlaceholder: 'root',

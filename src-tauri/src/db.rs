@@ -35,7 +35,7 @@ impl DbState {
     pub fn list_all(&self) -> Result<Vec<ConnectionConfig>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
-            .prepare("SELECT id, name, host, port, username, password, group_id FROM connections ORDER BY updated_at DESC")?;
+            .prepare("SELECT id, name, host, port, username, password, group_id, remark FROM connections ORDER BY updated_at DESC")?;
         let rows = stmt.query_map([], |row| {
             Ok(ConnectionConfig {
                 id: row.get(0)?,
@@ -45,6 +45,7 @@ impl DbState {
                 username: row.get(4)?,
                 password: row.get(5)?,
                 group_id: row.get(6)?,
+                remark: row.get(7)?,
             })
         })?;
         let mut list = Vec::new();
@@ -56,14 +57,14 @@ impl DbState {
         let conn = self.conn.lock().unwrap();
         if config.id > 0 {
             conn.execute(
-                "UPDATE connections SET name=?, host=?, port=?, username=?, password=?, group_id=?, updated_at=datetime('now') WHERE id=?",
-                rusqlite::params![config.name, config.host, config.port as i64, config.username, config.password, config.group_id, config.id],
+                "UPDATE connections SET name=?, host=?, port=?, username=?, password=?, group_id=?, remark=?, updated_at=datetime('now') WHERE id=?",
+                rusqlite::params![config.name, config.host, config.port as i64, config.username, config.password, config.group_id, config.remark, config.id],
             )?;
             Ok(config.id)
         } else {
             conn.execute(
-                "INSERT INTO connections (name, host, port, username, password, group_id) VALUES (?, ?, ?, ?, ?, ?)",
-                rusqlite::params![config.name, config.host, config.port as i64, config.username, config.password, config.group_id],
+                "INSERT INTO connections (name, host, port, username, password, group_id, remark) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                rusqlite::params![config.name, config.host, config.port as i64, config.username, config.password, config.group_id, config.remark],
             )?;
             Ok(conn.last_insert_rowid())
         }

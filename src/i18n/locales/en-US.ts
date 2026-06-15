@@ -32,6 +32,8 @@ export default {
       tagPlaceholder: 'Tag name',
       tagCreate: 'Create',
       noGroup: '(No Group)',
+      remark: 'Remark',
+      remarkPlaceholder: 'Optional notes...',
       namePlaceholder: 'My Server',
       hostPlaceholder: '192.168.1.1',
       usernamePlaceholder: 'root',

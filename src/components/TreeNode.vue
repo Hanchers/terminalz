@@ -49,7 +49,7 @@
 import { computed } from 'vue'
 
 interface Group { id: number; parent_id: number; name: string; remark?: string }
-interface Connection { id: number; name?: string; host: string; port: number; username: string; password: string; group_id: number }
+interface Connection { id: number; name?: string; host: string; port: number; username: string; password: string; group_id: number; remark?: string }
 interface Tag { id: number; name: string; color: string }
 
 const props = defineProps<{

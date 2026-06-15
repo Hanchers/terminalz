@@ -10,6 +10,7 @@ pub struct ConnectionConfig {
     pub username: String,
     pub password: String,
     pub group_id: i64,
+    pub remark: String,
 }
 
 /// 主机分组

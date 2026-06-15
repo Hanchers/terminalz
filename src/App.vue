@@ -61,7 +61,7 @@ import Sidebar from './components/Sidebar.vue'
 import Terminal from './components/Terminal.vue'
 import ServerStatus from './components/ServerStatus.vue'
 
-interface HostConfig { id?: number; name?: string; host: string; port: number; username: string; password: string; group_id?: number }
+interface HostConfig { id?: number; name?: string; host: string; port: number; username: string; password: string; group_id?: number; remark?: string }
 
 const isConnected = ref(false)
 const selectedHost = ref<HostConfig | null>(null)

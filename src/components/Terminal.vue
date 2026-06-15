@@ -99,7 +99,7 @@ import FileTransfer from './FileTransfer.vue';
 
 const { t } = useI18n();
 
-interface HostPrefill { id?: number; name?: string; host: string; port: number; username: string; password: string }
+interface HostPrefill { id?: number; name?: string; host: string; port: number; username: string; password: string; remark?: string }
 
 const props = defineProps<{ prefill: HostPrefill | null; mode: 'ssh' | 'local' | null }>()
 const emit = defineEmits<{ 'connection-change': [connected: boolean] }>()

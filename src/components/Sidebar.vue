@@ -131,6 +131,10 @@
           </div>
         </div>
         <div class="modal-field">
+          <label>{{ $t('sidebar.hostDialog.remark') }}</label>
+          <textarea v-model="hostDialog.remark" :placeholder="$t('sidebar.hostDialog.remarkPlaceholder')" rows="2"></textarea>
+        </div>
+        <div class="modal-field">
           <label>{{ $t('sidebar.hostDialog.group') }}</label>
           <select v-model="hostDialog.groupId">
             <option :value="0">{{ $t('sidebar.hostDialog.noGroup') }}</option>
@@ -275,11 +279,11 @@ import TreeNode from './TreeNode.vue'
 const { t, locale } = useI18n()
 
 interface Group { id: number; parent_id: number; name: string; remark: string }
-interface Connection { id: number; name: string; host: string; port: number; username: string; password: string; group_id: number }
+interface Connection { id: number; name: string; host: string; port: number; username: string; password: string; group_id: number; remark: string }
 interface Tag { id: number; name: string; color: string }
 interface FlatOption { id: number; label: string; disabled?: boolean }
 interface CtxMenu { visible: boolean; x: number; y: number; type: string; id: number }
-interface HostDialog { visible: boolean; editingId: number; name: string; host: string; port: number; username: string; password: string; groupId: number; tagIds: number[] }
+interface HostDialog { visible: boolean; editingId: number; name: string; host: string; port: number; username: string; password: string; groupId: number; tagIds: number[]; remark: string }
 interface GroupDialog { visible: boolean; editingId: number; name: string; parentId: number; remark: string }
 interface TagDialog { visible: boolean; name: string; color: string }
 
@@ -308,7 +312,7 @@ const ctxMenu = reactive<CtxMenu>({ visible: false, x: 0, y: 0, type: '', id: 0 
 const showHostPwd = ref(false)
 const hostDialog = reactive<HostDialog>({
   visible: false, editingId: 0,
-  name: '', host: '', port: 22, username: '', password: '', groupId: 0, tagIds: []
+  name: '', host: '', port: 22, username: '', password: '', groupId: 0, tagIds: [], remark: ''
 })
 const groupDialog = reactive<GroupDialog>({
   visible: false, editingId: 0,
@@ -387,7 +391,7 @@ async function openHostDialog(groupId = 0): Promise<void> {
   ctxMenu.visible = false
   Object.assign(hostDialog, {
     visible: true, editingId: 0, tagIds: [],
-    name: '', host: '', port: 22, username: '', password: '', groupId
+    name: '', host: '', port: 22, username: '', password: '', groupId, remark: ''
   })
 }
 
@@ -401,7 +405,7 @@ async function editHost(id: number): Promise<void> {
   Object.assign(hostDialog, {
     visible: true, editingId: c.id, tagIds,
     name: c.name || '', host: c.host, port: c.port || 22,
-    username: c.username, password: c.password, groupId: c.group_id || 0
+    username: c.username, password: c.password, groupId: c.group_id || 0, remark: c.remark || ''
   })
 }
 
@@ -413,7 +417,8 @@ async function saveHostDialog(): Promise<void> {
       name: hostDialog.name || `${hostDialog.username}@${hostDialog.host}`,
       host: hostDialog.host, port: hostDialog.port,
       username: hostDialog.username, password: hostDialog.password,
-      group_id: hostDialog.groupId
+      group_id: hostDialog.groupId,
+      remark: hostDialog.remark
     }})
     // 保存标签关联
     const hostId = saved.id
