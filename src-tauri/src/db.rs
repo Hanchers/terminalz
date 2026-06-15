@@ -1,40 +1,9 @@
 use anyhow::{Context, Result};
 use rusqlite::Connection;
-use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Mutex;
 
-// ---- 连接配置结构体 ----
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConnectionConfig {
-    pub id: i64,
-    pub name: String,
-    pub host: String,
-    pub port: u16,
-    pub username: String,
-    pub password: String,
-    pub group_id: i64,
-}
-
-// ---- 分组结构体 ----
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HostGroup {
-    pub id: i64,
-    pub parent_id: i64,
-    pub name: String,
-    pub remark: String,
-}
-
-// ---- 标签结构体 ----
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Tag {
-    pub id: i64,
-    pub name: String,
-    pub color: String,
-}
+use crate::models::{ConnectionConfig, HostGroup, HostTag, Tag};
 
 // ---- 数据库状态 ----
 
@@ -48,71 +17,13 @@ impl DbState {
             std::fs::create_dir_all(parent).ok();
         }
 
-        let conn = Connection::open(db_path).context("无法打开 SQLite 数据库")?;
+        let conn = Connection::open(db_path).context("Failed to open SQLite database")?;
 
-        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")
-            .ok();
-
-        // --- connections 表 ---
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS connections (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                name        TEXT NOT NULL,
-                host        TEXT NOT NULL,
-                port        INTEGER NOT NULL DEFAULT 22,
-                username    TEXT NOT NULL,
-                password    TEXT NOT NULL DEFAULT '',
-                group_id    INTEGER NOT NULL DEFAULT 0,
-                created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-                updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
-            )",
-            [],
-        ).context("建 connections 表失败")?;
-
-        // 兼容旧库：没有 group_id 列时自动添加
-        let has_group_id: bool = conn
-            .prepare("SELECT group_id FROM connections LIMIT 0")
-            .is_ok();
-        if !has_group_id {
-            conn.execute("ALTER TABLE connections ADD COLUMN group_id INTEGER NOT NULL DEFAULT 0", [])
-                .ok();
-        }
-
-        // --- groups 表 ---
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS host_groups (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                parent_id   INTEGER NOT NULL DEFAULT 0,
-                name        TEXT NOT NULL,
-                remark      TEXT NOT NULL DEFAULT '',
-                created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-                updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
-            )",
-            [],
-        ).context("建 host_groups 表失败")?;
-
-        // --- tags 表 ---
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS tags (
-                id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                name       TEXT NOT NULL,
-                color      TEXT NOT NULL DEFAULT '#3fb950',
-                created_at TEXT NOT NULL DEFAULT (datetime('now'))
-            )",
-            [],
-        ).context("建 tags 表失败")?;
-
-        // --- host_tags 关联表 ---
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS host_tags (
-                host_id INTEGER NOT NULL,
-                tag_id  INTEGER NOT NULL,
-                PRIMARY KEY (host_id, tag_id),
-                FOREIGN KEY (host_id) REFERENCES connections(id) ON DELETE CASCADE,
-                FOREIGN KEY (tag_id)  REFERENCES tags(id)       ON DELETE CASCADE
-            )",
-            [],
-        ).context("建 host_tags 表失败")?;
+        let schema = include_str!("schema.sql");
+        conn.execute_batch(
+            &format!("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; {}", schema),
+        )
+        .context("Failed to initialize database schema")?;
 
         Ok(Self {
             conn: Mutex::new(conn),
@@ -301,6 +212,23 @@ impl DbState {
     }
 
     // ---- Host-Tag 关联 ----
+
+    /// 列出所有 host-tag 关联记录
+    pub fn list_host_tags(&self) -> Result<Vec<HostTag>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT host_id, tag_id FROM host_tags ORDER BY host_id"
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(HostTag {
+                host_id: row.get(0)?,
+                tag_id: row.get(1)?,
+            })
+        })?;
+        let mut list = Vec::new();
+        for row in rows { list.push(row?); }
+        Ok(list)
+    }
 
     /// 获取某个 host 的所有标签
     pub fn get_host_tags(&self, host_id: i64) -> Result<Vec<Tag>> {

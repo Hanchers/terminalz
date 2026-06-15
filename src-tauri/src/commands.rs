@@ -1,4 +1,5 @@
-use crate::db::{ConnectionConfig, DbState, HostGroup, Tag};
+use crate::db::DbState;
+use crate::models::{ConnectionConfig, HostGroup, HostTag, Tag};
 use crate::local_term::LocalTermState;
 use crate::ssh::SshState;
 use crate::sftp::{FileEntry, UploadResult};
@@ -292,4 +293,9 @@ pub(crate) fn set_host_tags(
     tag_ids: Vec<i64>,
 ) -> Result<(), String> {
     db.set_host_tags(host_id, &tag_ids).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub(crate) fn list_host_tags(db: tauri::State<'_, DbState>) -> Result<Vec<HostTag>, String> {
+    db.list_host_tags().map_err(|e| e.to_string())
 }

@@ -1,6 +1,7 @@
 mod commands;
 mod db;
 mod local_term;
+mod models;
 mod ssh;
 mod sftp;
 mod sysinfo;
@@ -58,6 +59,7 @@ pub fn run() {
             update_tag,
             get_host_tags,
             set_host_tags,
+            list_host_tags,
         ])
         .run(tauri::generate_context!())
         .expect("启动 Tauri 应用失败");

@@ -67,29 +67,13 @@
           <input v-model.number="port" :placeholder="$t('terminal.form.portPlaceholder')" type="number" style="max-width:100px" @keyup.enter="doConnect" />
         </div>
         <div class="form-group">
-          <input v-model="username" :placeholder="$t('terminal.form.usernamePlaceholder')" @keyup.enter="doConnect" />
-          <div class="password-wrap">
-            <input
-              v-model="password"
-              :placeholder="$t('terminal.form.passwordPlaceholder')"
-              :type="showPassword ? 'text' : 'password'"
-              @keyup.enter="doConnect"
-            />
-            <button class="eye-btn" type="button" @click="showPassword = !showPassword" tabindex="-1">
-              <svg v-if="showPassword" viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
-              </svg>
-              <svg v-else viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                <path d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/>
-              </svg>
-            </button>
-          </div>
+          <input v-model="username" :placeholder="$t('terminal.form.usernamePlaceholder')" readonly class="input-readonly" @keyup.enter="doConnect" />
+          <input v-model="password" :placeholder="$t('terminal.form.passwordPlaceholder')" readonly class="input-readonly" type="password" @keyup.enter="doConnect" />
         </div>
         <div class="btn-row">
           <button class="btn-connect" @click="doConnect" :disabled="connecting">
             {{ connecting ? $t('terminal.form.connecting') : $t('terminal.form.connect') }}
           </button>
-          <button class="btn-save" @click="doSave" :disabled="!canSave">{{ $t('terminal.form.save') }}</button>
         </div>
         <p v-if="error" class="error">{{ error }}</p>
       </div>
@@ -104,7 +88,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+import { ref, onMounted, onUnmounted, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -130,16 +114,12 @@ const host = ref('');
 const port = ref(22);
 const username = ref('');
 const password = ref('');
-const showPassword = ref(false);
 const termContainer = ref<HTMLDivElement | null>(null);
-const editingId = ref(0);
 const showFileTransfer = ref(false);
 
 let term: Terminal | null = null;
 let fitAddon: FitAddon | null = null;
 let unlisten: (() => void) | null = null;
-
-const canSave = computed(() => host.value && username.value);
 
 // ---- 外部 prefill ---
 
@@ -150,7 +130,6 @@ watch(() => props.prefill, (val: HostPrefill | null) => {
     port.value = val.port || 22;
     username.value = val.username || '';
     password.value = val.password || '';
-    editingId.value = val.id || 0;
     error.value = '';
   }
 }, { deep: true })
@@ -324,28 +303,6 @@ async function disconnect() {
   cleanupTerminal();
   connected.value = false;
   emit('connection-change', false);
-}
-
-// ---- 数据库操作 ----
-
-async function doSave() {
-  if (!canSave.value) return;
-  try {
-    const config = {
-      id: editingId.value || 0,
-      name: name.value || `${username.value}@${host.value}`,
-      host: host.value,
-      port: port.value,
-      username: username.value,
-      password: password.value,
-    };
-    const saved = await invoke<{ id: number }>('save_connection', { config });
-    editingId.value = saved.id;
-    error.value = t('terminal.error.saved');
-    setTimeout(() => { error.value = ''; }, 1500);
-  } catch (e) {
-    error.value = `${t('terminal.error.saveFailed')}${e}`;
-  }
 }
 
 // ---- 清理 ----
@@ -563,34 +520,9 @@ input[type='number']::-webkit-outer-spin-button {
   margin: 0;
 }
 
-/* 密码眼睛按钮 */
-.password-wrap {
-  position: relative;
-  flex: 1;
-  display: flex;
-}
-.password-wrap input {
-  flex: 1;
-  padding-right: 36px;
-}
-.eye-btn {
-  position: absolute;
-  right: 2px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  border-radius: 4px;
-  color: var(--color-text-tertiary);
-  cursor: pointer;
-}
-.eye-btn:hover {
-  color: var(--color-text-secondary);
+.input-readonly {
+  opacity: 0.65;
+  cursor: default;
 }
 
 .btn-row {
@@ -612,22 +544,6 @@ input[type='number']::-webkit-outer-spin-button {
 
 .btn-connect:hover:not(:disabled) {
   background: var(--color-btn-primary-hover);
-}
-
-.btn-save {
-  width: auto;
-  padding: 10px 16px;
-  background: var(--color-btn-save);
-  color: var(--color-btn-save-text);
-  border: 1px solid var(--color-border-input);
-  border-radius: 4px;
-  font-size: 13px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.btn-save:hover:not(:disabled) {
-  background: var(--color-btn-save-hover);
 }
 
 button:disabled {
