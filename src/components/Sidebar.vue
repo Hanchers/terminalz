@@ -334,17 +334,14 @@ async function loadAll(): Promise<void> {
   try { connections.value = await invoke<Connection[]>('list_connections') } catch (_) { connections.value = [] }
   try { groups.value = await invoke<Group[]>('list_groups') } catch (_) { groups.value = [] }
   try { allTags.value = await invoke<Tag[]>('list_tags') } catch (_) { allTags.value = [] }
-  // 加载所有 host 的标签
+  // 批量加载所有 host 的标签（单次查询代替 N 次单独调用）
   try {
     const ids = connections.value.map(c => c.id)
     if (ids.length > 0) {
+      const result = await invoke<Record<number, Tag[]>>('list_all_host_tags', { hostIds: ids })
       const map = new Map<number, Tag[]>()
-      // 逐个加载（简单可靠）
       for (const c of connections.value) {
-        try {
-          const tags = await invoke<Tag[]>('get_host_tags', { hostId: c.id })
-          map.set(c.id, tags)
-        } catch (_) { map.set(c.id, []) }
+        map.set(c.id, result[c.id] || [])
       }
       hostTagsMap.value = map
     }

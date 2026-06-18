@@ -29,10 +29,3 @@ pub struct Tag {
     pub name: String,
     pub color: String,
 }
-
-/// host-tag 关联
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HostTag {
-    pub host_id: i64,
-    pub tag_id: i64,
-}

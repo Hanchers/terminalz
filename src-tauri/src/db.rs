@@ -3,7 +3,7 @@ use rusqlite::Connection;
 use std::path::Path;
 use std::sync::Mutex;
 
-use crate::models::{ConnectionConfig, HostGroup, HostTag, Tag};
+use crate::models::{ConnectionConfig, HostGroup, Tag};
 
 // ---- 数据库状态 ----
 
@@ -79,18 +79,17 @@ impl DbState {
     /// 统计某个分组及其子分组下的 host 数量
     pub fn count_hosts_in_group(&self, group_id: i64) -> Result<i64> {
         let conn = self.conn.lock().unwrap();
-        let descendant_ids = self.collect_descendant_ids(&conn, group_id);
-        let mut ids = descendant_ids;
-        ids.push(group_id);
-
-        let placeholders: Vec<String> = ids.iter().map(|_| "?".to_string()).collect();
-        let sql = format!(
-            "SELECT COUNT(*) FROM connections WHERE group_id IN ({})",
-            placeholders.join(",")
-        );
-        let params: Vec<rusqlite::types::Value> = ids.iter().map(|&i| rusqlite::types::Value::from(i)).collect();
-        let params_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p as &dyn rusqlite::types::ToSql).collect();
-        let count: i64 = conn.query_row(&sql, params_refs.as_slice(), |row| row.get(0))?;
+        let count: i64 = conn.query_row(
+            "WITH RECURSIVE subtree(id) AS (
+                SELECT id FROM host_groups WHERE parent_id = ?
+                UNION ALL
+                SELECT g.id FROM host_groups g JOIN subtree s ON g.parent_id = s.id
+            )
+            SELECT COUNT(*) FROM connections
+            WHERE group_id = ? OR group_id IN (SELECT id FROM subtree)",
+            rusqlite::params![group_id, group_id],
+            |row| row.get(0),
+        )?;
         Ok(count)
     }
 
@@ -137,7 +136,7 @@ impl DbState {
         Ok(())
     }
 
-    /// 检查分组是否有子分组
+    /// 检查分组是否有子分组（单次查询，不需要 CTE）
     pub fn has_child_groups(&self, group_id: i64) -> Result<bool> {
         let conn = self.conn.lock().unwrap();
         let count: i64 = conn.query_row(
@@ -146,25 +145,6 @@ impl DbState {
             |row| row.get(0),
         )?;
         Ok(count > 0)
-    }
-
-    /// 递归收集所有后代分组的 id
-    fn collect_descendant_ids(&self, conn: &Connection, parent_id: i64) -> Vec<i64> {
-        let mut result = Vec::new();
-        let mut stmt = match conn.prepare("SELECT id FROM host_groups WHERE parent_id=?") {
-            Ok(s) => s,
-            Err(_) => return result,
-        };
-        let children: Vec<i64> = stmt
-            .query_map([parent_id], |row| row.get(0))
-            .unwrap()
-            .filter_map(|r| r.ok())
-            .collect();
-        for child_id in &children {
-            result.push(*child_id);
-            result.extend(self.collect_descendant_ids(conn, *child_id));
-        }
-        result
     }
 
     // ---- Tag CRUD ----
@@ -214,23 +194,6 @@ impl DbState {
 
     // ---- Host-Tag 关联 ----
 
-    /// 列出所有 host-tag 关联记录
-    pub fn list_host_tags(&self) -> Result<Vec<HostTag>> {
-        let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "SELECT host_id, tag_id FROM host_tags ORDER BY host_id"
-        )?;
-        let rows = stmt.query_map([], |row| {
-            Ok(HostTag {
-                host_id: row.get(0)?,
-                tag_id: row.get(1)?,
-            })
-        })?;
-        let mut list = Vec::new();
-        for row in rows { list.push(row?); }
-        Ok(list)
-    }
-
     /// 获取某个 host 的所有标签
     pub fn get_host_tags(&self, host_id: i64) -> Result<Vec<Tag>> {
         let conn = self.conn.lock().unwrap();
@@ -253,7 +216,6 @@ impl DbState {
     }
 
     /// 批量获取多个 host 的标签（返回 host_id → Vec<Tag> 映射）
-    #[allow(dead_code)]
     pub fn get_hosts_tags(&self, host_ids: &[i64]) -> Result<std::collections::HashMap<i64, Vec<Tag>>> {
         if host_ids.is_empty() {
             return Ok(std::collections::HashMap::new());
@@ -303,4 +265,101 @@ impl DbState {
         }
         Ok(())
     }
+}
+
+// ---- Tauri commands ----
+
+#[tauri::command]
+pub(crate) fn list_connections(db: tauri::State<'_, DbState>) -> Result<Vec<ConnectionConfig>, String> {
+    db.list_all().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub(crate) fn save_connection(
+    db: tauri::State<'_, DbState>,
+    config: ConnectionConfig,
+) -> Result<ConnectionConfig, String> {
+    let new_id = db.save(&config).map_err(|e| e.to_string())?;
+    Ok(ConnectionConfig { id: new_id, ..config })
+}
+
+#[tauri::command]
+pub(crate) fn delete_connection(db: tauri::State<'_, DbState>, id: i64) -> Result<(), String> {
+    db.delete(id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub(crate) fn list_groups(db: tauri::State<'_, DbState>) -> Result<Vec<HostGroup>, String> {
+    db.list_groups().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub(crate) fn save_group(db: tauri::State<'_, DbState>, group: HostGroup) -> Result<HostGroup, String> {
+    let new_id = db.save_group(&group).map_err(|e| e.to_string())?;
+    Ok(HostGroup { id: new_id, ..group })
+}
+
+#[tauri::command]
+pub(crate) fn delete_group(db: tauri::State<'_, DbState>, id: i64) -> Result<(), String> {
+    if db.has_child_groups(id).map_err(|e| e.to_string())? {
+        return Err("该分组下存在子分组，请先删除子分组".to_string());
+    }
+    let count = db.count_hosts_in_group(id).map_err(|e| e.to_string())?;
+    if count > 0 {
+        return Err(format!("该分组及子分组下存在 {} 个 host，请先移除这些 host", count));
+    }
+    db.delete_group(id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub(crate) fn list_tags(db: tauri::State<'_, DbState>) -> Result<Vec<Tag>, String> {
+    db.list_tags().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub(crate) fn save_tag(
+    db: tauri::State<'_, DbState>,
+    name: String,
+    color: String,
+) -> Result<Tag, String> {
+    db.save_tag(&name, &color).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub(crate) fn delete_tag(db: tauri::State<'_, DbState>, id: i64) -> Result<(), String> {
+    db.delete_tag(id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub(crate) fn update_tag(
+    db: tauri::State<'_, DbState>,
+    id: i64,
+    name: String,
+    color: String,
+) -> Result<(), String> {
+    db.update_tag(id, &name, &color).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub(crate) fn get_host_tags(db: tauri::State<'_, DbState>, host_id: i64) -> Result<Vec<Tag>, String> {
+    db.get_host_tags(host_id).map_err(|e| e.to_string())
+}
+
+/// Batch query: returns a map of host_id → tags for all given host IDs.
+/// Replaces N individual get_host_tags calls with a single query.
+#[tauri::command]
+pub(crate) fn list_all_host_tags(
+    db: tauri::State<'_, DbState>,
+    host_ids: Vec<i64>,
+) -> Result<std::collections::HashMap<i64, Vec<Tag>>, String> {
+    db.get_hosts_tags(&host_ids).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub(crate) fn set_host_tags(
+    db: tauri::State<'_, DbState>,
+    host_id: i64,
+    tag_ids: Vec<i64>,
+) -> Result<(), String> {
+    db.set_host_tags(host_id, &tag_ids).map_err(|e| e.to_string())
 }

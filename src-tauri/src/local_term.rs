@@ -2,8 +2,9 @@ use anyhow::{Context, Result};
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use std::io::{Read, Write};
 use tauri::{AppHandle, Emitter};
-use tokio::sync::Mutex;
 use tokio::sync::mpsc;
+
+use crate::terminal;
 
 // ---- 数据结构 ----
 
@@ -12,21 +13,16 @@ pub struct LocalOutput {
     pub data: Vec<u8>,
 }
 
-enum LocalCommand {
-    Write(Vec<u8>),
-    Resize(u32, u32),
-}
-
 // ---- 状态 ----
 
 pub struct LocalTermState {
-    cmd_tx: Mutex<Option<mpsc::UnboundedSender<LocalCommand>>>,
+    channel: terminal::Channel,
 }
 
 impl LocalTermState {
     pub fn new() -> Self {
         Self {
-            cmd_tx: Mutex::new(None),
+            channel: terminal::Channel::new(),
         }
     }
 }
@@ -82,8 +78,8 @@ pub async fn start(
         .context(format!("无法启动 Shell: {}", shell))?;
     drop(pair.slave);
 
-    let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<LocalCommand>();
-    *state.cmd_tx.lock().await = Some(cmd_tx);
+    let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<terminal::Command>();
+    state.channel.set(cmd_tx).await;
 
     // 读取线程：从 PTY master 读取数据并发送到前端
     let app = app_handle.clone();
@@ -91,18 +87,12 @@ pub async fn start(
         let mut buf = [0u8; 4096];
         loop {
             match reader.read(&mut buf) {
-                Ok(0) => {
-                    eprintln!("[Local] PTY read EOF");
-                    break;
-                }
+                Ok(0) => break,
                 Ok(n) => {
                     let output = LocalOutput { data: buf[..n].to_vec() };
                     let _ = app.emit("local-output", output);
                 }
-                Err(e) => {
-                    eprintln!("[Local] PTY read error: {}", e);
-                    break;
-                }
+                Err(_) => break,
             }
         }
     });
@@ -111,13 +101,12 @@ pub async fn start(
     std::thread::spawn(move || {
         loop {
             match cmd_rx.blocking_recv() {
-                Some(LocalCommand::Write(data)) => {
+                Some(terminal::Command::Write(data)) => {
                     if writer.write_all(&data).is_err() {
-                        eprintln!("[Local] PTY write failed");
                         break;
                     }
                 }
-                Some(LocalCommand::Resize(rows, cols)) => {
+                Some(terminal::Command::Resize(rows, cols)) => {
                     let size = PtySize {
                         rows: rows as u16,
                         cols: cols as u16,
@@ -125,54 +114,68 @@ pub async fn start(
                         pixel_height: 0,
                     };
                     if master.resize(size).is_err() {
-                        eprintln!("[Local] PTY resize failed");
                         break;
                     }
                 }
-                None => {
-                    eprintln!("[Local] command channel closed");
-                    break;
-                }
+                None => break,
             }
         }
         // 线程退出时，master、writer 和 _child 会被 drop
         // master drop → PTY 关闭 → child 进程收到 SIGHUP → 进程退出
-        eprintln!("[Local] PTY command handler ended");
     });
 
     Ok(())
 }
 
-// ---- 写入 ----
+// ---- 写入 / 调整大小 / 关闭 ----
 
 pub async fn write(state: &LocalTermState, data: &[u8]) -> Result<()> {
-    let tx = state.cmd_tx.lock().await;
-    if let Some(ref tx) = *tx {
-        tx.send(LocalCommand::Write(data.to_vec()))
-            .map_err(|_| anyhow::anyhow!("本地终端已关闭"))?;
-        Ok(())
-    } else {
-        Err(anyhow::anyhow!("尚未启动本地终端"))
-    }
+    state.channel.write(data).await
 }
-
-// ---- 调整终端大小 ----
 
 pub async fn resize(state: &LocalTermState, rows: u32, cols: u32) -> Result<()> {
-    let tx = state.cmd_tx.lock().await;
-    if let Some(ref tx) = *tx {
-        tx.send(LocalCommand::Resize(rows, cols))
-            .map_err(|_| anyhow::anyhow!("本地终端已关闭"))?;
-        Ok(())
-    } else {
-        Err(anyhow::anyhow!("尚未启动本地终端"))
-    }
+    state.channel.resize(rows, cols).await
 }
 
-// ---- 关闭 ----
-
 pub async fn close(state: &LocalTermState) -> Result<()> {
-    let mut tx = state.cmd_tx.lock().await;
-    *tx = None; // 丢弃 sender，命令处理线程的 recv 返回 None，线程退出
+    state.channel.close().await;
     Ok(())
+}
+
+// ---- Tauri commands ----
+
+#[tauri::command]
+pub(crate) async fn local_term_start(
+    state: tauri::State<'_, LocalTermState>,
+    app_handle: tauri::AppHandle,
+    rows: u32,
+    cols: u32,
+) -> Result<(), String> {
+    start(&state, app_handle, rows, cols)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub(crate) async fn local_term_write(
+    state: tauri::State<'_, LocalTermState>,
+    data: Vec<u8>,
+) -> Result<(), String> {
+    write(&state, &data).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub(crate) async fn local_term_resize(
+    state: tauri::State<'_, LocalTermState>,
+    rows: u32,
+    cols: u32,
+) -> Result<(), String> {
+    resize(&state, rows, cols).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub(crate) async fn local_term_close(
+    state: tauri::State<'_, LocalTermState>,
+) -> Result<(), String> {
+    close(&state).await.map_err(|e| e.to_string())
 }

@@ -1,53 +1,49 @@
 use anyhow::{Context, Result};
-use russh::*;
-use std::sync::Arc;
+use russh::{client, ChannelMsg};
 
-use crate::ssh::ClientHandler;
+use crate::ssh::{ClientHandler, SshState};
 
-/// 服务器实时状态
+/// Remote system info.
 #[derive(serde::Serialize, Clone, Debug)]
 pub struct SystemInfo {
     pub hostname: String,
-    /// CPU 负载 (1min / 5min / 15min)
+    /// CPU load averages (1/5/15 min)
     pub load_1min: f64,
     pub load_5min: f64,
     pub load_15min: f64,
-    /// CPU 使用率百分比 (0-100)
+    /// Real CPU utilisation percentage (0–100), computed from /proc/stat deltas
     pub cpu_pct: f64,
-    /// 总内存 (MB)
+    /// Total memory (MB)
     pub mem_total: u64,
-    /// 已用内存 (MB)
+    /// Used memory (MB)
     pub mem_used: u64,
-    /// 可用内存 (MB)
+    /// Available memory (MB)
     pub mem_avail: u64,
-    /// 内存使用百分比
+    /// Memory usage %
     pub mem_pct: f64,
-    /// 磁盘挂载信息（每个挂载点一条）
+    /// Per-mount disk info
     pub disks: Vec<DiskInfo>,
-    /// 操作系统名称 (如 "Ubuntu 22.04.5 LTS")
+    /// OS name (e.g. "Ubuntu 22.04.5 LTS")
     pub os_name: String,
-    /// 内核版本
+    /// Kernel version
     pub kernel: String,
-    /// 系统运行时间
+    /// Uptime string
     pub uptime: String,
 }
 
-/// 单个挂载点的磁盘信息
 #[derive(serde::Serialize, Clone, Debug)]
 pub struct DiskInfo {
-    /// 挂载点路径 (如 "/", "/data")
     pub mount: String,
-    /// 总容量 (MB)
     pub total: u64,
-    /// 已用 (MB)
     pub used: u64,
-    /// 使用百分比 (0-100)
     pub pct: f64,
 }
 
-/// 远程命令，用 <<<SEP>>> 分隔各段输出
+/// Shell script that gathers system info in one SSH round-trip.
+/// CPU usage is computed by reading /proc/stat twice with a 0.5 s gap.
 const SYS_CMD: &str = r#"
 echo '<<<LOADAVG>>>' && cat /proc/loadavg && \
+echo '<<<CPU>>>' && cat /proc/stat | grep '^cpu ' && sleep 0.5 && cat /proc/stat | grep '^cpu ' && \
 echo '<<<MEM>>>' && free -m 2>/dev/null | grep '^Mem:' || echo 'N/A' && \
 echo '<<<CPUCOUNT>>>' && grep -c processor /proc/cpuinfo 2>/dev/null || echo 1 && \
 echo '<<<DISK>>>' && (df -BM -x tmpfs -x devtmpfs -x overlay -x squashfs 2>/dev/null | tail -n +2 || echo 'N/A') && \
@@ -58,29 +54,23 @@ echo '<<<UPTIME>>>' && (uptime -p 2>/dev/null || uptime 2>/dev/null || echo 'N/A
 echo '<<<END>>>'
 "#;
 
-pub async fn get_system_info(credentials: &(String, u16, String, String)) -> Result<SystemInfo> {
-    let (host, port, username, password) = credentials;
-    let config = Arc::new(client::Config::default());
-    let handler = crate::ssh::ClientHandler;
+pub async fn get_system_info(state: &SshState) -> Result<SystemInfo> {
+    let session = {
+        let guard = state.session.lock().await;
+        guard
+            .as_ref()
+            .context("SSH session not available")?
+            .clone()
+    };
 
-    let mut session = client::connect(config, (host.clone(), *port), handler)
-        .await
-        .context("系统信息查询连接失败")?;
-
-    session
-        .authenticate_password(username, password)
-        .await
-        .context("认证失败")?;
-
-    let output = exec(&mut session, SYS_CMD)
+    let output = exec(&session, SYS_CMD)
         .await
         .context("获取系统信息失败")?;
 
     parse_system_info(&output)
 }
 
-/// 执行远程命令并收集输出
-async fn exec(session: &mut client::Handle<ClientHandler>, cmd: &str) -> Result<String> {
+async fn exec(session: &client::Handle<ClientHandler>, cmd: &str) -> Result<String> {
     let mut channel = session
         .channel_open_session()
         .await
@@ -104,7 +94,6 @@ async fn exec(session: &mut client::Handle<ClientHandler>, cmd: &str) -> Result<
     String::from_utf8(output).context("输出不是有效的 UTF-8")
 }
 
-/// 按 <<<SECTION>>> 标记解析所有信息
 fn parse_system_info(text: &str) -> Result<SystemInfo> {
     let section = |marker: &str| -> String {
         let start = text.find(marker).map(|i| i + marker.len()).unwrap_or(0);
@@ -116,6 +105,7 @@ fn parse_system_info(text: &str) -> Result<SystemInfo> {
     };
 
     let loadavg_raw = section("<<<LOADAVG>>>");
+    let cpu_raw = section("<<<CPU>>>");
     let mem_raw = section("<<<MEM>>>");
     let cpu_count_raw = section("<<<CPUCOUNT>>>");
     let disk_raw = section("<<<DISK>>>");
@@ -125,7 +115,6 @@ fn parse_system_info(text: &str) -> Result<SystemInfo> {
     let uptime_raw = section("<<<UPTIME>>>");
 
     // --- Load Average ---
-    // 格式: "0.16 0.07 0.06 1/345 12345"
     let la: Vec<f64> = loadavg_raw
         .split_whitespace()
         .filter_map(|s| s.parse().ok())
@@ -136,17 +125,21 @@ fn parse_system_info(text: &str) -> Result<SystemInfo> {
         (0.0, 0.0, 0.0)
     };
 
-    // --- CPU Count ---
-    let cpu_count: f64 = cpu_count_raw
+    // --- Real CPU usage from /proc/stat deltas ---
+    //
+    // /proc/stat first line: cpu  user nice system idle iowait irq softirq steal guest guest_nice
+    // The script outputs two lines (before and after sleep 0.5).
+    let cpu_pct = compute_cpu_pct(&cpu_raw);
+
+    // --- CPU Count (kept for future use; currently CPU usage from /proc/stat deltas) ---
+    let _cpu_count: f64 = cpu_count_raw
         .split_whitespace()
         .next()
         .and_then(|s| s.parse().ok())
         .unwrap_or(2.0_f64)
         .max(1.0_f64);
-    let cpu_pct = (load_1min / cpu_count * 100.0).min(100.0).max(0.0);
 
     // --- Memory ---
-    // free -m: "Mem:      7821    1381     469      11    5970    5617"
     let mem_parts: Vec<u64> = mem_raw
         .split_whitespace()
         .skip(1)
@@ -156,7 +149,6 @@ fn parse_system_info(text: &str) -> Result<SystemInfo> {
     let (mem_total, mem_used, mem_avail) = if mem_parts.len() >= 2 {
         let total = mem_parts[0];
         let used = mem_parts[1];
-        // available is the 6th column (index 5 after skipping "Mem:")
         let avail = if mem_parts.len() >= 6 {
             mem_parts[5]
         } else {
@@ -173,7 +165,6 @@ fn parse_system_info(text: &str) -> Result<SystemInfo> {
     };
 
     // --- Disk ---
-    // 格式每行: /dev/sda1  51200M 20480M 28672M  42% /
     let mut disks: Vec<DiskInfo> = Vec::new();
     for line in disk_raw.lines() {
         let parts: Vec<&str> = line.split_whitespace().collect();
@@ -194,7 +185,6 @@ fn parse_system_info(text: &str) -> Result<SystemInfo> {
         }
         disks.push(DiskInfo { mount, total, used, pct });
     }
-    // 至少保证有一个根分区
     if disks.is_empty() {
         disks.push(DiskInfo {
             mount: "/".into(),
@@ -233,11 +223,9 @@ fn parse_system_info(text: &str) -> Result<SystemInfo> {
 
     // --- Uptime ---
     let uptime = uptime_raw.lines().next().unwrap_or("unknown").trim().to_string();
-    // 如果不是 "up ..." 格式，尝试从 raw 中提取
     let uptime = if uptime.starts_with("up ") {
         uptime
     } else {
-        // uptime 没有 -p 标志时输出是 "14:23:01 up 5 days,  3:42,  1 user,  load average: ..."
         uptime_raw
             .split("load average")
             .next()
@@ -263,19 +251,57 @@ fn parse_system_info(text: &str) -> Result<SystemInfo> {
     })
 }
 
+/// Parse two /proc/stat "cpu" lines and compute the utilisation percentage.
+///
+/// Each line: cpu  user nice system idle iowait irq softirq steal guest guest_nice
+/// We treat iowait as idle (the CPU isn't doing useful work while waiting on I/O).
+fn compute_cpu_pct(cpu_raw: &str) -> f64 {
+    let lines: Vec<&str> = cpu_raw.lines().collect();
+    if lines.len() < 2 {
+        return 0.0;
+    }
+
+    let parse_line = |line: &str| -> Option<Vec<u64>> {
+        let fields: Vec<u64> = line
+            .split_whitespace()
+            .skip(1) // skip "cpu"
+            .filter_map(|s| s.parse().ok())
+            .collect();
+        if fields.len() >= 4 { Some(fields) } else { None }
+    };
+
+    let fields1 = match parse_line(lines[0]) { Some(f) => f, None => return 0.0 };
+    let fields2 = match parse_line(lines[1]) { Some(f) => f, None => return 0.0 };
+
+    // idle = idle + iowait (columns 3 and 4, 0-indexed)
+    let idle1 = fields1.get(3).copied().unwrap_or(0) + fields1.get(4).copied().unwrap_or(0);
+    let idle2 = fields2.get(3).copied().unwrap_or(0) + fields2.get(4).copied().unwrap_or(0);
+
+    let total1: u64 = fields1.iter().sum();
+    let total2: u64 = fields2.iter().sum();
+
+    let total_delta = total2.saturating_sub(total1);
+    let idle_delta = idle2.saturating_sub(idle1);
+
+    if total_delta == 0 {
+        return 0.0;
+    }
+
+    let usage = (total_delta - idle_delta) as f64 / total_delta as f64 * 100.0;
+    usage.clamp(0.0, 100.0)
+}
+
 /// 解析 "51200M" 或 "51200" 这样的值为 MB 数字
 fn parse_mb(s: &str) -> u64 {
-    let cleaned = s.trim_end_matches(|c: char| !c.is_ascii_digit());
+    let cleaned: String = s.chars().take_while(|c| c.is_ascii_digit()).collect();
     cleaned.parse().unwrap_or(0)
 }
 
 // ---- 本地系统信息采集（非 SSH，直接读取本机） ----
 
-/// 使用 sysinfo 库采集本地系统信息
 pub fn get_local_system_info() -> Result<SystemInfo> {
     let mut sys = ::sysinfo::System::new_all();
 
-    // 两次刷新才能获取准确的 CPU 使用率
     sys.refresh_cpu_all();
     std::thread::sleep(std::time::Duration::from_millis(200));
     sys.refresh_all();
@@ -318,7 +344,6 @@ pub fn get_local_system_info() -> Result<SystemInfo> {
         } else {
             0.0
         };
-        // 过滤掉过小的特殊挂载点
         if total > 0 {
             disks.push(DiskInfo { mount, total, used, pct });
         }
@@ -327,25 +352,17 @@ pub fn get_local_system_info() -> Result<SystemInfo> {
         disks.push(DiskInfo { mount: "/".into(), total: 0, used: 0, pct: 0.0 });
     }
 
-    // Hostname
     let hostname = ::sysinfo::System::host_name()
         .unwrap_or_else(|| "unknown".to_string());
 
-    // OS Name + Version
     let os_name = {
         let name = ::sysinfo::System::name().unwrap_or_else(|| "Unknown".to_string());
         let version = ::sysinfo::System::os_version().unwrap_or_default();
-        if version.is_empty() {
-            name
-        } else {
-            format!("{} {}", name, version)
-        }
+        if version.is_empty() { name } else { format!("{} {}", name, version) }
     };
 
-    // Kernel
     let kernel = ::sysinfo::System::kernel_version().unwrap_or_else(|| "unknown".to_string());
 
-    // Uptime
     let uptime_secs = ::sysinfo::System::uptime();
     let uptime = format_uptime(uptime_secs);
 
@@ -379,4 +396,21 @@ fn format_uptime(secs: u64) -> String {
     if mins > 0 { parts.push(format!("{} min", mins)); }
     if parts.is_empty() { parts.push("< 1 min".into()); }
     format!("up {}", parts.join(", "))
+}
+
+// ---- Tauri commands ----
+
+#[tauri::command]
+pub(crate) async fn sys_info(
+    state: tauri::State<'_, SshState>,
+) -> Result<SystemInfo, String> {
+    get_system_info(&state).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub(crate) async fn local_sys_info() -> Result<SystemInfo, String> {
+    tokio::task::spawn_blocking(|| get_local_system_info())
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
 }

@@ -1,10 +1,10 @@
 use anyhow::{Context, Result};
-use russh::*;
 use russh_sftp::client::SftpSession;
 use std::path::Path;
-use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+use crate::ssh::SshState;
 
 const CHUNK_SIZE: usize = 256 * 1024; // 256KB
 
@@ -16,7 +16,7 @@ pub struct SftpProgress {
     pub current: u64,
     pub total: u64,
     pub percentage: f64,
-    pub status: String, // "uploading" | "completed" | "error"
+    pub status: String, // "uploading" | "downloading" | "completed" | "error"
 }
 
 #[derive(serde::Serialize, Clone, Debug)]
@@ -24,7 +24,7 @@ pub struct FileEntry {
     pub name: String,
     pub is_dir: bool,
     pub size: u64,
-    pub modified: String, // human-readable date
+    pub modified: String,
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -35,24 +35,26 @@ pub struct UploadResult {
 
 // ---- 连接辅助 ----
 
-async fn connect_sftp(credentials: &(String, u16, String, String)) -> Result<SftpSession> {
-    let (host, port, username, password) = credentials;
-    let config = Arc::new(client::Config::default());
-    let handler = crate::ssh::ClientHandler;
-
-    let mut session = client::connect(config, (host.clone(), *port), handler)
-        .await
-        .context("SFTP 连接失败")?;
-
-    session
-        .authenticate_password(username, password)
-        .await
-        .context("SFTP 认证失败")?;
+/// Open a new SFTP channel over the existing SSH session.
+/// This reuses the already-authenticated TCP connection, skipping
+/// connect + key-exchange + auth for every SFTP operation.
+///
+/// The lock is held only long enough to clone the `Arc<Handle>` —
+/// it is **not** held across any network I/O, so concurrent
+/// SFTP operations don't contend on the mutex.
+async fn connect_sftp(state: &SshState) -> Result<SftpSession> {
+    let session = {
+        let guard = state.session.lock().await;
+        guard
+            .as_ref()
+            .context("SSH session not available — connect first")?
+            .clone()
+    };
 
     let channel = session
         .channel_open_session()
         .await
-        .context("无法打开通道")?;
+        .context("无法打开 SFTP 通道")?;
 
     channel
         .request_subsystem(true, "sftp")
@@ -60,16 +62,15 @@ async fn connect_sftp(credentials: &(String, u16, String, String)) -> Result<Sft
         .context("无法请求 SFTP 子系统")?;
 
     let stream = channel.into_stream();
-    SftpSession::new(stream).await.context("无法初始化 SFTP 会话")
+    SftpSession::new(stream)
+        .await
+        .context("无法初始化 SFTP 会话")
 }
 
 // ---- 目录列表 ----
 
-pub async fn list_dir(
-    credentials: &(String, u16, String, String),
-    remote_path: &str,
-) -> Result<Vec<FileEntry>> {
-    let sftp = connect_sftp(credentials).await?;
+pub async fn list_dir(state: &SshState, remote_path: &str) -> Result<Vec<FileEntry>> {
+    let sftp = connect_sftp(state).await?;
     let path = if remote_path.is_empty() { "/" } else { remote_path };
     let entries = sftp.read_dir(path).await?;
 
@@ -103,19 +104,14 @@ pub async fn list_dir(
 
 // ---- 删除文件/目录 ----
 
-pub async fn delete_path(
-    credentials: &(String, u16, String, String),
-    remote_path: &str,
-) -> Result<()> {
-    let sftp = connect_sftp(credentials).await?;
+pub async fn delete_path(state: &SshState, remote_path: &str) -> Result<()> {
+    let sftp = connect_sftp(state).await?;
 
-    // 尝试删除文件
     match sftp.remove_file(remote_path).await {
         Ok(()) => return Ok(()),
         Err(_) => {}
     }
 
-    // 尝试删除目录（递归）
     remove_dir_recursive(&sftp, remote_path).await
 }
 
@@ -140,21 +136,16 @@ async fn remove_dir_recursive(sftp: &SftpSession, path: &str) -> Result<()> {
 
 // ---- 重命名 ----
 
-pub async fn rename_path(
-    credentials: &(String, u16, String, String),
-    old_path: &str,
-    new_path: &str,
-) -> Result<()> {
-    let sftp = connect_sftp(credentials).await?;
+pub async fn rename_path(state: &SshState, old_path: &str, new_path: &str) -> Result<()> {
+    let sftp = connect_sftp(state).await?;
     sftp.rename(old_path, new_path).await?;
     Ok(())
 }
 
-pub async fn create_dir(
-    credentials: &(String, u16, String, String),
-    remote_path: &str,
-) -> Result<()> {
-    let sftp = connect_sftp(credentials).await?;
+// ---- 创建目录 ----
+
+pub async fn create_dir(state: &SshState, remote_path: &str) -> Result<()> {
+    let sftp = connect_sftp(state).await?;
     sftp.create_dir(remote_path).await?;
     Ok(())
 }
@@ -162,12 +153,12 @@ pub async fn create_dir(
 // ---- 下载文件 ----
 
 pub async fn download_file(
-    credentials: &(String, u16, String, String),
+    state: &SshState,
     remote_path: &str,
     local_path: &str,
     app_handle: &AppHandle,
 ) -> Result<()> {
-    let sftp = connect_sftp(credentials).await?;
+    let sftp = connect_sftp(state).await?;
     let file_name = Path::new(remote_path)
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
@@ -202,7 +193,7 @@ pub async fn download_file(
                 current: downloaded,
                 total: total_size,
                 percentage,
-                status: "uploading".to_string(),
+                status: "downloading".to_string(),
             },
         );
     }
@@ -223,15 +214,15 @@ pub async fn download_file(
     Ok(())
 }
 
-// ---- 上传文件（保留原有） ----
+// ---- 上传文件 ----
 
 pub async fn upload_files(
-    credentials: &(String, u16, String, String),
+    state: &SshState,
     local_paths: Vec<String>,
     remote_dir: String,
     app_handle: &AppHandle,
 ) -> Result<UploadResult> {
-    let mut sftp = connect_sftp(credentials).await?;
+    let mut sftp = connect_sftp(state).await?;
     let mut success = Vec::new();
     let mut failed = Vec::new();
 
@@ -322,4 +313,75 @@ async fn upload_one(
     );
 
     Ok(())
+}
+
+// ---- Tauri commands ----
+
+async fn get_ssh_creds(state: &tauri::State<'_, SshState>) -> Result<(String, u16, String, String), String> {
+    state.credentials.lock().await.clone()
+        .ok_or_else(|| "请先建立 SSH 连接".to_string())
+}
+
+#[tauri::command]
+pub(crate) async fn sftp_list_dir(
+    state: tauri::State<'_, SshState>,
+    remote_path: String,
+) -> Result<Vec<FileEntry>, String> {
+    // verify connection exists
+    get_ssh_creds(&state).await?;
+    list_dir(&state, &remote_path).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub(crate) async fn sftp_delete(
+    state: tauri::State<'_, SshState>,
+    remote_path: String,
+) -> Result<(), String> {
+    get_ssh_creds(&state).await?;
+    delete_path(&state, &remote_path).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub(crate) async fn sftp_rename(
+    state: tauri::State<'_, SshState>,
+    old_path: String,
+    new_path: String,
+) -> Result<(), String> {
+    get_ssh_creds(&state).await?;
+    rename_path(&state, &old_path, &new_path).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub(crate) async fn sftp_mkdir(
+    state: tauri::State<'_, SshState>,
+    remote_path: String,
+) -> Result<(), String> {
+    get_ssh_creds(&state).await?;
+    create_dir(&state, &remote_path).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub(crate) async fn sftp_download(
+    state: tauri::State<'_, SshState>,
+    app_handle: tauri::AppHandle,
+    remote_path: String,
+    local_path: String,
+) -> Result<(), String> {
+    get_ssh_creds(&state).await?;
+    download_file(&state, &remote_path, &local_path, &app_handle)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub(crate) async fn sftp_upload(
+    state: tauri::State<'_, SshState>,
+    app_handle: tauri::AppHandle,
+    local_paths: Vec<String>,
+    remote_dir: String,
+) -> Result<UploadResult, String> {
+    get_ssh_creds(&state).await?;
+    upload_files(&state, local_paths, remote_dir, &app_handle)
+        .await
+        .map_err(|e| e.to_string())
 }
