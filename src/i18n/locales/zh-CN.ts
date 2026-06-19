@@ -100,6 +100,8 @@ export default {
       fillRequired: '请填写主机地址、用户名和密码',
       connectFailed: '连接失败：',
       localStartFailed: '启动本地终端失败：',
+      maxAttemptsLocal: '本地终端启动失败已达 {n} 次上限，请检查环境配置',
+      maxAttemptsSsh: 'SSH 连接失败已达 {n} 次上限，请检查网络和配置',
       saveFailed: '保存失败：',
       saved: '已保存 ✓',
     },

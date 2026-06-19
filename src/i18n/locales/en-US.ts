@@ -100,6 +100,8 @@ export default {
       fillRequired: 'Please fill in host, username and password',
       connectFailed: 'Connection failed: ',
       localStartFailed: 'Local terminal failed: ',
+      maxAttemptsLocal: 'Local terminal failed after {n} attempts, check your environment',
+      maxAttemptsSsh: 'SSH connection failed after {n} attempts, check network and config',
       saveFailed: 'Save failed: ',
       saved: 'Saved ✓',
     },

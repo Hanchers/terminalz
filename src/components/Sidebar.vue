@@ -90,157 +90,30 @@
     </div>
 
     <!-- ======== 弹窗：编辑/新建 Host ======== -->
-    <div v-if="hostDialog.visible" class="modal-overlay" @click.self="closeHostDialog">
-      <div class="modal-box">
-        <div class="modal-title">{{ hostDialog.editingId ? $t('sidebar.hostDialog.edit') : $t('sidebar.hostDialog.new') }}</div>
-        <div class="modal-field">
-          <label>{{ $t('sidebar.hostDialog.name') }}</label>
-          <input v-model="hostDialog.name" :placeholder="$t('sidebar.hostDialog.namePlaceholder')" @keyup.enter="saveHostDialog" />
-        </div>
-        <div class="modal-field">
-          <label>{{ $t('sidebar.hostDialog.host') }}</label>
-          <input v-model="hostDialog.host" :placeholder="$t('sidebar.hostDialog.hostPlaceholder')" @keyup.enter="saveHostDialog" />
-        </div>
-        <div class="modal-row">
-          <div class="modal-field small">
-            <label>{{ $t('sidebar.hostDialog.port') }}</label>
-            <input v-model.number="hostDialog.port" type="number" placeholder="22" />
-          </div>
-          <div class="modal-field">
-            <label>{{ $t('sidebar.hostDialog.username') }}</label>
-            <input v-model="hostDialog.username" :placeholder="$t('sidebar.hostDialog.usernamePlaceholder')" @keyup.enter="saveHostDialog" />
-          </div>
-        </div>
-        <div class="modal-field">
-          <label>{{ $t('sidebar.hostDialog.password') }}</label>
-          <div class="password-wrap">
-            <input
-              v-model="hostDialog.password"
-              :type="showHostPwd ? 'text' : 'password'"
-              :placeholder="$t('sidebar.hostDialog.passwordPlaceholder')"
-              @keyup.enter="saveHostDialog"
-            />
-            <button class="eye-btn" type="button" @click="showHostPwd = !showHostPwd" tabindex="-1">
-              <svg v-if="showHostPwd" viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
-                <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
-              </svg>
-              <svg v-else viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
-                <path d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/>
-              </svg>
-            </button>
-          </div>
-        </div>
-        <div class="modal-field">
-          <label>{{ $t('sidebar.hostDialog.remark') }}</label>
-          <textarea v-model="hostDialog.remark" :placeholder="$t('sidebar.hostDialog.remarkPlaceholder')" rows="2"></textarea>
-        </div>
-        <div class="modal-field">
-          <label>{{ $t('sidebar.hostDialog.group') }}</label>
-          <select v-model="hostDialog.groupId">
-            <option :value="0">{{ $t('sidebar.hostDialog.noGroup') }}</option>
-            <option v-for="g in flatGroupOptions" :key="g.id" :value="g.id">
-              {{ g.label }}
-            </option>
-          </select>
-        </div>
-        <div class="modal-field">
-          <label>{{ $t('sidebar.hostDialog.tags') }}</label>
-          <div class="tag-checkboxes">
-            <label
-              v-for="t in allTags"
-              :key="t.id"
-              class="tag-checkbox-label"
-              :style="{ borderColor: t.color, color: hostDialog.tagIds.includes(t.id) ? '#fff' : t.color, background: hostDialog.tagIds.includes(t.id) ? t.color : 'transparent' }"
-            >
-              <input
-                type="checkbox"
-                :checked="hostDialog.tagIds.includes(t.id)"
-                @change="toggleHostTag(t.id)"
-                style="display:none"
-              />
-              {{ t.name }}
-            </label>
-            <span v-if="allTags.length === 0" class="tag-none">{{ $t('sidebar.hostDialog.noTags') }}</span>
-          </div>
-          <button class="btn-tag-add" @click="quickAddTag">{{ $t('sidebar.hostDialog.newTag') }}</button>
-          <div v-if="showQuickTag" class="quick-tag-row">
-            <input v-model="newTag.name" :placeholder="$t('sidebar.hostDialog.tagPlaceholder')" class="tag-name-input" @keyup.enter="saveQuickTag" />
-            <label class="color-swatch" :style="{ background: newTag.color }">
-              <input v-model="newTag.color" type="color" />
-            </label>
-            <button class="modal-btn primary" style="padding:4px 10px;font-size:12px" @click="saveQuickTag">{{ $t('sidebar.hostDialog.tagCreate') }}</button>
-          </div>
-        </div>
-        <div class="modal-actions">
-          <button class="modal-btn cancel" @click="closeHostDialog">{{ $t('sidebar.hostDialog.cancel') }}</button>
-          <button class="modal-btn primary" @click="saveHostDialog">{{ $t('sidebar.hostDialog.save') }}</button>
-        </div>
-      </div>
-    </div>
+    <HostDialog
+      :host-dialog="hostDialog"
+      :all-tags="allTags"
+      :flat-group-options="flatGroupOptions"
+      @save="saveHostDialog"
+      @cancel="closeHostDialog"
+      @saved="loadAll"
+    />
 
     <!-- ======== 弹窗：编辑/新建 Group ======== -->
-    <div v-if="groupDialog.visible" class="modal-overlay" @click.self="closeGroupDialog">
-      <div class="modal-box">
-        <div class="modal-title">{{ groupDialog.editingId ? $t('sidebar.groupDialog.edit') : $t('sidebar.groupDialog.new') }}</div>
-        <div class="modal-field">
-          <label>{{ $t('sidebar.groupDialog.name') }}</label>
-          <input v-model="groupDialog.name" placeholder="Production" @keyup.enter="saveGroupDialog" />
-        </div>
-        <div class="modal-field">
-          <label>{{ $t('sidebar.groupDialog.parentGroup') }}</label>
-          <select v-model="groupDialog.parentId">
-            <option :value="0">{{ $t('sidebar.groupDialog.root') }}</option>
-            <option v-for="g in groupSelectOptions" :key="g.id" :value="g.id" :disabled="g.disabled">
-              {{ g.label }}
-            </option>
-          </select>
-        </div>
-        <div class="modal-field">
-          <label>{{ $t('sidebar.groupDialog.remark') }}</label>
-          <textarea v-model="groupDialog.remark" :placeholder="$t('sidebar.groupDialog.remarkPlaceholder')" rows="2"></textarea>
-        </div>
-        <div class="modal-actions">
-          <button class="modal-btn cancel" @click="closeGroupDialog">{{ $t('sidebar.groupDialog.cancel') }}</button>
-          <button class="modal-btn primary" @click="saveGroupDialog">{{ $t('sidebar.groupDialog.save') }}</button>
-        </div>
-      </div>
-    </div>
+    <GroupDialog
+      :group-dialog="groupDialog"
+      :group-select-options="groupSelectOptions"
+      @save="saveGroupDialog"
+      @cancel="closeGroupDialog"
+    />
 
     <!-- ======== 弹窗：管理标签 ======== -->
-    <div v-if="tagDialog.visible" class="modal-overlay" @click.self="closeTagDialog">
-      <div class="modal-box" style="max-width:360px">
-        <div class="modal-title">{{ $t('sidebar.tagDialog.title') }}</div>
-        <div v-if="allTags.length === 0" class="tag-none" style="padding:8px 0">{{ $t('sidebar.tagDialog.none') }}</div>
-        <div v-for="t in allTags" :key="t.id" class="tag-mgr-row">
-          <template v-if="editingTag && editingTag.id === t.id">
-            <label class="color-swatch" style="width:18px;height:18px" :style="{ background: editingTag.color }">
-              <input v-model="editingTag.color" type="color" />
-            </label>
-            <input v-model="editingTag.name" class="tag-edit-input" @keyup.enter="saveEditTag" @keyup.escape="cancelEditTag" />
-            <button class="tag-mgr-save" @click="saveEditTag" title="Save">✓</button>
-            <button class="tag-mgr-del" @click="cancelEditTag" title="Cancel">×</button>
-          </template>
-          <template v-else>
-            <span class="tag-mgr-swatch" :style="{ background: t.color }"></span>
-            <span class="tag-mgr-name tag-clickable" @click="startEditTag(t)">{{ t.name }}</span>
-            <button class="tag-mgr-del" @click="doDeleteTag(t.id)" title="Delete tag">×</button>
-          </template>
-        </div>
-        <div class="modal-field" style="margin-top:12px">
-          <label>{{ $t('sidebar.tagDialog.name') }}</label>
-          <div style="display:flex;gap:8px">
-            <input v-model="tagDialog.name" :placeholder="$t('sidebar.hostDialog.tagPlaceholder')" style="flex:1" @keyup.enter="doSaveTag" />
-            <label class="color-swatch" :style="{ background: tagDialog.color }">
-              <input v-model="tagDialog.color" type="color" />
-            </label>
-            <button class="modal-btn primary" style="padding:4px 12px;font-size:12px" @click="doSaveTag">{{ $t('sidebar.tagDialog.create') }}</button>
-          </div>
-        </div>
-        <div class="modal-actions">
-          <button class="modal-btn cancel" @click="closeTagDialog">{{ $t('sidebar.tagDialog.done') }}</button>
-        </div>
-      </div>
-    </div>
+    <TagDialog
+      :tag-dialog="tagDialog"
+      :all-tags="allTags"
+      @cancel="closeTagDialog"
+      @saved="loadAll"
+    />
 
     <!-- ======== 右键菜单 ======== -->
     <div
@@ -269,12 +142,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { invoke } from '@tauri-apps/api/core'
 import { currentTheme, themes, setTheme } from '../themes/index'
 import { locales, saveLocale, type SupportedLocale } from '../i18n'
 import TreeNode from './TreeNode.vue'
+import HostDialog from './HostDialog.vue'
+import GroupDialog from './GroupDialog.vue'
+import TagDialog from './TagDialog.vue'
 
 const { t, locale } = useI18n()
 
@@ -309,7 +185,6 @@ function switchLanguage(id: SupportedLocale): void {
 
 const ctxMenu = reactive<CtxMenu>({ visible: false, x: 0, y: 0, type: '', id: 0 })
 
-const showHostPwd = ref(false)
 const hostDialog = reactive<HostDialog>({
   visible: false, editingId: 0,
   name: '', host: '', port: 22, username: '', password: '', groupId: 0, tagIds: [], remark: ''
@@ -324,17 +199,24 @@ const tagDialog = reactive<TagDialog>({
 
 const allTags = ref<Tag[]>([])
 const hostTagsMap = ref<Map<number, Tag[]>>(new Map())
-const showQuickTag = ref(false)
-const newTag = reactive({ name: '', color: '#3fb950' })
-const editingTag = ref<{ id: number; name: string; color: string } | null>(null)
 
 onMounted(() => { loadAll() })
 
+onUnmounted(() => {
+  window.removeEventListener('click', hideCtxAndMenus)
+})
+
 async function loadAll(): Promise<void> {
-  try { connections.value = await invoke<Connection[]>('list_connections') } catch (_) { connections.value = [] }
-  try { groups.value = await invoke<Group[]>('list_groups') } catch (_) { groups.value = [] }
-  try { allTags.value = await invoke<Tag[]>('list_tags') } catch (_) { allTags.value = [] }
-  // 批量加载所有 host 的标签（单次查询代替 N 次单独调用）
+  // Parallel loading: connections, groups, tags fetched concurrently
+  const [conns, grps, tags] = await Promise.all([
+    invoke<Connection[]>('list_connections').catch(() => [] as Connection[]),
+    invoke<Group[]>('list_groups').catch(() => [] as Group[]),
+    invoke<Tag[]>('list_tags').catch(() => [] as Tag[]),
+  ])
+  connections.value = conns
+  groups.value = grps
+  allTags.value = tags
+  // Batch load host tags (single query instead of N individual calls)
   try {
     const ids = connections.value.map(c => c.id)
     if (ids.length > 0) {
@@ -425,13 +307,7 @@ async function saveHostDialog(): Promise<void> {
   } catch (e) { alert(t('sidebar.error.saveFailed') + e) }
 }
 
-function closeHostDialog(): void { hostDialog.visible = false; showHostPwd.value = false; showQuickTag.value = false }
-
-function toggleHostTag(tagId: number): void {
-  const idx = hostDialog.tagIds.indexOf(tagId)
-  if (idx >= 0) hostDialog.tagIds.splice(idx, 1)
-  else hostDialog.tagIds.push(tagId)
-}
+function closeHostDialog(): void { hostDialog.visible = false }
 
 async function deleteHost(id: number): Promise<void> {
   ctxMenu.visible = false
@@ -476,58 +352,7 @@ function openTagDialog(): void {
   tagDialog.color = '#3fb950'
 }
 
-function closeTagDialog(): void { tagDialog.visible = false; editingTag.value = null }
-
-// ---- 标签编辑 ----
-
-function startEditTag(tag: Tag): void {
-  editingTag.value = { id: tag.id, name: tag.name, color: tag.color }
-}
-
-async function saveEditTag(): Promise<void> {
-  if (!editingTag.value || !editingTag.value.name.trim()) return
-  try {
-    await invoke('update_tag', {
-      id: editingTag.value.id,
-      name: editingTag.value.name.trim(),
-      color: editingTag.value.color,
-    })
-    editingTag.value = null
-    await loadAll()
-  } catch (e) { alert(String(e)) }
-}
-
-function cancelEditTag(): void {
-  editingTag.value = null
-}
-
-async function doSaveTag(): Promise<void> {
-  if (!tagDialog.name.trim()) return
-  try {
-    await invoke('save_tag', { name: tagDialog.name.trim(), color: tagDialog.color })
-    tagDialog.name = ''
-    await loadAll()
-  } catch (e) { alert(t('sidebar.error.failed') + e) }
-}
-
-async function doDeleteTag(id: number): Promise<void> {
-  if (!confirm(t('sidebar.tagDialog.deleteConfirm'))) return
-  try { await invoke('delete_tag', { id }); await loadAll() } catch (e) { alert(String(e)) }
-}
-
-function quickAddTag(): void { showQuickTag.value = !showQuickTag.value }
-
-async function saveQuickTag(): Promise<void> {
-  if (!newTag.name.trim()) return
-  try {
-    const tag = await invoke<Tag>('save_tag', { name: newTag.name.trim(), color: newTag.color })
-    // 自动选中新标签
-    hostDialog.tagIds.push(tag.id)
-    newTag.name = ''
-    showQuickTag.value = false
-    await loadAll() // 刷新标签列表
-  } catch (e) { alert(t('sidebar.error.failed') + e) }
-}
+function closeTagDialog(): void { tagDialog.visible = false }
 
 async function tryDeleteGroup(id: number): Promise<void> {
   ctxMenu.visible = false
@@ -609,81 +434,6 @@ if (typeof window !== 'undefined') {
 .ctx-item:hover { background: var(--color-bg-hover); }
 .ctx-danger { color: var(--color-danger); }
 .ctx-sep { height: 1px; background: var(--color-border-secondary); margin: 3px 6px; }
-.modal-overlay { position: fixed; inset: 0; z-index: 300; background: var(--shadow-overlay); display: flex; align-items: center; justify-content: center; }
-.modal-box { width: 400px; max-height: 80vh; overflow-y: auto; background: var(--color-bg-panel); border: 1px solid var(--color-border-primary); border-radius: 10px; box-shadow: var(--shadow-panel); padding: 20px; }
-.modal-title { font-size: 15px; font-weight: 600; color: var(--color-text-primary); margin-bottom: 16px; }
-.modal-field { margin-bottom: 12px; }
-.modal-field label { display: block; font-size: 11px; color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
-.modal-field input, .modal-field select, .modal-field textarea { width: 100%; padding: 7px 10px; font-size: 13px; background: var(--color-bg-input); border: 1px solid var(--color-border-input); border-radius: 5px; color: var(--color-text-primary); outline: none; box-sizing: border-box; font-family: inherit; }
-.modal-field input:focus, .modal-field select:focus, .modal-field textarea:focus { border-color: var(--color-accent); }
-.modal-field textarea { resize: vertical; }
-.modal-row { display: flex; gap: 10px; }
-.modal-row .modal-field.small { flex: 0 0 100px; }
-.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
-.modal-btn { padding: 7px 18px; font-size: 13px; border: none; border-radius: 5px; cursor: pointer; }
-.modal-btn.cancel { background: var(--color-bg-hover-alt); color: var(--color-text-primary); }
-.modal-btn.cancel:hover { background: var(--color-bg-active); }
-.modal-btn.primary { background: var(--color-btn-primary); color: var(--color-text-white); }
-.modal-btn.primary:hover { background: var(--color-btn-primary-hover); }
-.password-wrap { position: relative; display: flex; }
-.password-wrap input { flex: 1; padding-right: 32px; }
-.eye-btn { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; background: transparent; border: none; border-radius: 4px; color: var(--color-text-tertiary); cursor: pointer; }
-.eye-btn:hover { color: var(--color-text-secondary); }
-
-/* ---- 标签 checkbox 样式 ---- */
-.tag-checkboxes { display: flex; flex-wrap: wrap; gap: 6px; }
-.tag-checkbox-label {
-  display: inline-flex; align-items: center; gap: 2px;
-  padding: 2px 8px; border-radius: 12px; font-size: 11px;
-  border: 1px solid; cursor: pointer; transition: all 0.15s;
-  user-select: none;
-}
-.tag-checkbox-label:hover { opacity: 0.85; }
-.tag-none { font-size: 11px; color: var(--color-text-tertiary); }
-.btn-tag-add {
-  margin-top: 6px; padding: 2px 8px; font-size: 11px;
-  background: transparent; border: 1px dashed var(--color-border-input);
-  border-radius: 4px; color: var(--color-text-tertiary); cursor: pointer;
-}
-.btn-tag-add:hover { border-color: var(--color-accent); color: var(--color-accent); }
-.quick-tag-row { display: flex; gap: 6px; margin-top: 6px; align-items: center; }
-.tag-name-input { flex: 1; min-width: 260px; padding: 4px 8px; font-size: 12px; background: var(--color-bg-input); border: 1px solid var(--color-border-input); border-radius: 4px; color: var(--color-text-primary); }
-.color-swatch {
-  width: 24px; height: 24px; border-radius: 50%;
-  border: 2px solid var(--color-border-input);
-  display: inline-flex; flex-shrink: 0; cursor: pointer;
-  position: relative; overflow: hidden;
-}
-.color-swatch input {
-  position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer;
-}
-
-/* ---- 标签管理弹窗 ---- */
-.tag-mgr-row {
-  display: flex; align-items: center; gap: 8px; padding: 6px 0;
-  border-bottom: 1px solid var(--color-border-secondary);
-}
-.tag-mgr-swatch { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-.tag-mgr-name { flex: 1; font-size: 13px; color: var(--color-text-primary); }
-.tag-mgr-del {
-  width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;
-  background: transparent; border: none; border-radius: 4px; color: var(--color-text-tertiary);
-  cursor: pointer; font-size: 16px;
-}
-.tag-mgr-del:hover { background: var(--color-danger-btn); color: var(--color-text-white); }
-.tag-mgr-save {
-  width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;
-  background: transparent; border: none; border-radius: 4px; color: var(--color-success);
-  cursor: pointer; font-size: 14px;
-}
-.tag-mgr-save:hover { background: var(--color-success); color: var(--color-text-white); }
-.tag-clickable { cursor: pointer; border-radius: 4px; padding: 2px 4px; margin: -2px -4px; }
-.tag-clickable:hover { background: var(--color-bg-hover); }
-.tag-edit-input {
-  flex: 1; padding: 3px 6px; font-size: 12px;
-  background: var(--color-bg-input); border: 1px solid var(--color-accent);
-  border-radius: 4px; color: var(--color-text-primary); outline: none;
-}
 
 .btn-tags {
   width: 24px; height: 24px; background: transparent; border: none; border-radius: 4px;

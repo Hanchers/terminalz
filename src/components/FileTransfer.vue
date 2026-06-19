@@ -13,6 +13,7 @@
           <div class="ft-col-header">
             <span class="ft-col-title">Local</span>
             <div class="ft-col-actions">
+              <button class="ft-action-btn" @click="showHiddenLocal = !showHiddenLocal" :title="showHiddenLocal ? 'Hide dotfiles' : 'Show dotfiles'">{{ showHiddenLocal ? '👁' : '👁‍🗨' }}</button>
               <button class="ft-action-btn" @click="refreshLocal" title="Refresh">↻</button>
               <!-- Actions 下拉 -->
               <div class="ft-dropdown" ref="localDropdownEl">
@@ -33,6 +34,13 @@
               spellcheck="false"
             />
           </div>
+          <!-- 快捷目录 -->
+          <div class="ft-quick-dirs">
+            <button class="ft-quick-btn" @click="jumpToDir('home')">🏠 Home</button>
+            <button class="ft-quick-btn" @click="jumpToDir('desktop')">🖥 Desktop</button>
+            <button class="ft-quick-btn" @click="jumpToDir('download')">📥 Downloads</button>
+            <button class="ft-quick-btn" @click="jumpToDir('document')">📄 Documents</button>
+          </div>
           <!-- 文件列表 -->
           <div
             class="ft-file-list"
@@ -45,9 +53,9 @@
               <span class="ft-col-name">Name</span>
               <span class="ft-col-size">Size</span>
             </div>
-            <div v-if="localFiles.length === 0" class="ft-empty">Empty</div>
+            <div v-if="filteredLocalFiles.length === 0" class="ft-empty">Empty</div>
             <div
-              v-for="f in localFiles"
+              v-for="f in filteredLocalFiles"
               :key="f.name"
               class="ft-row"
               :class="{ selected: isSelected('local', f.name) }"
@@ -159,7 +167,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 
@@ -170,10 +178,18 @@ interface SelectState { local: string | null; remote: string | null }
 
 const emit = defineEmits<{ close: [] }>()
 
-const localPath = ref('/Users')
+const localPath = ref('')
 const remotePath = ref('/')
 const localFiles = ref<FileItem[]>([])
 const remoteFiles = ref<FileItem[]>([])
+const showHiddenLocal = ref(false)
+
+// Filter: hide dotfiles by default, toggle to reveal them
+const filteredLocalFiles = computed(() => {
+  if (showHiddenLocal.value) return localFiles.value
+  return localFiles.value.filter(f => !f.name.startsWith('.'))
+})
+
 const statusMsg = ref('')
 const progressMsg = ref('')
 const progressPct = ref(0)
@@ -185,6 +201,8 @@ const ctxMenu = reactive<CtxMenu>({ visible: false, x: 0, y: 0, side: '', file: 
 
 // ---- 初始化 ----
 onMounted(async () => {
+  // Resolve home directory via Tauri (avoids macOS sandbox permission issues)
+  try { localPath.value = await invoke<string>('get_well_known_dir', { dirName: 'home' }) } catch (_) { localPath.value = '/' }
   loadLocal(localPath.value)
   loadRemote(remotePath.value)
   // 监听传输进度
@@ -401,6 +419,15 @@ function formatSize(bytes: number): string {
   const i = Math.floor(Math.log(bytes) / Math.log(1024))
   return (bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1) + ' ' + units[i]
 }
+
+async function jumpToDir(dirName: string): Promise<void> {
+  try {
+    const dir = await invoke<string>('get_well_known_dir', { dirName })
+    loadLocal(dir)
+  } catch (e) {
+    statusMsg.value = 'Failed to resolve directory: ' + e
+  }
+}
 </script>
 
 <style scoped>
@@ -428,6 +455,9 @@ function formatSize(bytes: number): string {
 .ft-dropdown-item:hover { background: var(--color-bg-hover); }
 
 .ft-path-bar { display: flex; align-items: center; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--color-border-secondary); flex-shrink: 0; }
+.ft-quick-dirs { display: flex; gap: 4px; padding: 4px 8px; border-bottom: 1px solid var(--color-border-secondary); flex-shrink: 0; flex-wrap: wrap; }
+.ft-quick-btn { padding: 2px 8px; font-size: 11px; background: var(--color-bg-input); border: 1px solid var(--color-border-secondary); border-radius: 4px; color: var(--color-text-secondary); cursor: pointer; white-space: nowrap; }
+.ft-quick-btn:hover { background: var(--color-bg-hover); color: var(--color-text-primary); border-color: var(--color-accent); }
 .ft-path-up { width: 28px; height: 28px; font-size: 14px; background: transparent; border: 1px solid var(--color-border-secondary); border-radius: 4px; color: var(--color-text-secondary); cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .ft-path-up:hover { background: var(--color-bg-hover); color: var(--color-text-primary); }
 .ft-path-input { flex: 1; padding: 5px 8px; font-size: 12px; font-family: monospace; background: var(--color-bg-input); border: 1px solid var(--color-border-primary); border-radius: 4px; color: var(--color-text-primary); outline: none; }

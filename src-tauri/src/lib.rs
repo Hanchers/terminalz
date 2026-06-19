@@ -17,6 +17,14 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            // Init debug logging (no-op in release builds)
+            #[cfg(debug_assertions)]
+            {
+                env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug"))
+                    .format_timestamp_millis()
+                    .init();
+            }
+
             let app_handle = app.handle();
             let db_path = app_handle
                 .path()
@@ -52,6 +60,7 @@ pub fn run() {
             sysinfo::local_sys_info,
             // Local filesystem
             read_local_dir,
+            get_well_known_dir,
             // DB — connections
             db::list_connections,
             db::save_connection,
@@ -75,9 +84,77 @@ pub fn run() {
 
 // ---- 本地文件系统浏览 ----
 
+/// Resolve a well-known directory (e.g. Downloads, Documents, Desktop).
+/// Uses Tauri's OS-specific path resolution which handles macOS permissions better.
 #[tauri::command]
-fn read_local_dir(path: String) -> Result<Vec<FileEntry>, String> {
-    let entries = std::fs::read_dir(&path).map_err(|e| e.to_string())?;
+fn get_well_known_dir(dir_name: String, app_handle: tauri::AppHandle) -> Result<String, String> {
+    let resolver = app_handle.path();
+    let path = match dir_name.as_str() {
+        "download" => resolver.download_dir(),
+        "document" => resolver.document_dir(),
+        "desktop" => resolver.desktop_dir(),
+        "home" => resolver.home_dir(),
+        "picture" => resolver.picture_dir(),
+        "video" => resolver.video_dir(),
+        "audio" => resolver.audio_dir(),
+        _ => resolver.home_dir(),
+    }
+    .map_err(|e| e.to_string())?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn read_local_dir(path: String, app_handle: tauri::AppHandle) -> Result<Vec<FileEntry>, String> {
+    let read = |p: &str| -> Result<std::fs::ReadDir, i32> {
+        std::fs::read_dir(p).map_err(|e| e.raw_os_error().unwrap_or(0))
+    };
+
+    let entries = match read(&path) {
+        Ok(entries) => entries,
+        Err(os_err) => {
+            // For macOS EPERM (os error 1), try well-known directories as fallback
+            if cfg!(target_os = "macos") && os_err == 1 {
+                let mut entries = None;
+                // Try common system-resolved paths: home, desktop, documents
+                for dir in ["home", "desktop", "document", "download"] {
+                    let name: &str = dir;
+                    let fallback = match name {
+                        "home" => app_handle.path().home_dir(),
+                        "desktop" => app_handle.path().desktop_dir(),
+                        "document" => app_handle.path().document_dir(),
+                        "download" => app_handle.path().download_dir(),
+                        _ => continue,
+                    };
+                    if let Ok(p) = fallback {
+                        if let Ok(ents) = std::fs::read_dir(&p) {
+                            entries = Some(ents);
+                            break;
+                        }
+                    }
+                }
+                match entries {
+                    Some(ents) => ents,
+                    None => {
+                        let home = app_handle.path().home_dir().map_err(|e| e.to_string())?;
+                        std::fs::read_dir(&home).map_err(|e| {
+                            format!(
+                                "Cannot access this directory (macOS permission denied).\n\
+                                 Tip: grant Full Disk Access to your terminal in System Settings > Privacy & Security > Full Disk Access.\n\
+                                 System error: {}",
+                                e
+                            )
+                        })?
+                    }
+                }
+            } else {
+                // Non-macOS or non-EPERM: fall back to home dir
+                let home = app_handle.path().home_dir().map_err(|e| e.to_string())?;
+                std::fs::read_dir(&home)
+                    .map_err(|e| format!("Cannot read directory ({}). Try navigating from your home folder.", e))?
+            }
+        }
+    };
+
     let mut files: Vec<FileEntry> = Vec::new();
     for entry in entries {
         let entry = entry.map_err(|e| e.to_string())?;

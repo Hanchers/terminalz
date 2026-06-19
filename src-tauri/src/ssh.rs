@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
-use russh::*;
+use log::{debug, info, warn};
+use russh::{client, ChannelMsg};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{mpsc, Mutex};
@@ -66,6 +67,8 @@ pub async fn connect(
     // 如果已有连接，先断开
     disconnect(state).await.ok();
 
+    debug!("SSH connect: {}@{}:{}  (pty {}x{})", username, host, port, cols, rows);
+
     let config = Arc::new(client::Config::default());
     let handler = ClientHandler;
 
@@ -74,6 +77,7 @@ pub async fn connect(
 
     let mut conn = None;
     for attempt in 1..=MAX_RETRIES {
+        debug!("SSH TCP connect attempt {}/{}", attempt, MAX_RETRIES);
         match tokio::time::timeout(
             CONNECT_TIMEOUT,
             client::connect(config.clone(), (host.to_string(), port), handler.clone()),
@@ -81,44 +85,118 @@ pub async fn connect(
         .await
         {
             Ok(Ok(s)) => {
+                debug!("SSH TCP connected (attempt {})", attempt);
                 conn = Some(s);
                 break;
             }
-            Ok(Err(_)) | Err(_) if attempt < MAX_RETRIES => {
+            Ok(Err(ref e)) if attempt < MAX_RETRIES => {
+                warn!("SSH TCP attempt {}/{} failed: {} — retrying...", attempt, MAX_RETRIES, e);
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            }
+            Err(_) if attempt < MAX_RETRIES => {
+                warn!("SSH TCP attempt {}/{} timed out — retrying...", attempt, MAX_RETRIES);
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             }
             Ok(Err(e)) => {
-                return Err(e).context(format!("SSH 连接失败（已重试 {} 次）", MAX_RETRIES));
+                warn!("SSH TCP all {} attempts failed: {}", MAX_RETRIES, e);
+                return Err(e).context(format!("SSH connection failed after {} retries", MAX_RETRIES));
             }
             Err(_) => {
-                return Err(anyhow::anyhow!("SSH 连接超时（已重试 {} 次）", MAX_RETRIES));
+                warn!("SSH TCP all {} attempts timed out", MAX_RETRIES);
+                return Err(anyhow::anyhow!("SSH connection timed out after {} retries", MAX_RETRIES));
             }
         }
     }
 
-    let mut session = conn.context("SSH 连接失败")?;
+    let mut session = conn.context("SSH connection failed")?;
 
-    session
-        .authenticate_password(username, password)
+    debug!("SSH authenticating as {}...", username);
+
+    // Try keyboard-interactive auth first (more compatible with PAM-based servers).
+    // Falls back gracefully to simple password auth when the server doesn't use prompts.
+    let none: Option<String> = None;
+    match session
+        .authenticate_keyboard_interactive_start(username, none)
         .await
-        .context("认证失败，请检查用户名和密码")?;
+    {
+        Ok(client::KeyboardInteractiveAuthResponse::Success) => {
+            debug!("SSH authenticated (keyboard-interactive, no prompts)");
+        }
+        Ok(client::KeyboardInteractiveAuthResponse::InfoRequest { prompts, .. }) => {
+            debug!(
+                "SSH keyboard-interactive: {} prompt(s), responding with password",
+                prompts.len()
+            );
+            let responses: Vec<String> = prompts.iter().map(|_| password.to_owned()).collect();
+            match session
+                .authenticate_keyboard_interactive_respond(responses)
+                .await
+            {
+                Ok(client::KeyboardInteractiveAuthResponse::Success) => {
+                    debug!("SSH authenticated (keyboard-interactive, responded)");
+                }
+                Ok(client::KeyboardInteractiveAuthResponse::InfoRequest { prompts: prompts2, .. }) => {
+                    debug!(
+                        "SSH keyboard-interactive: {} more prompt(s)",
+                        prompts2.len()
+                    );
+                    let r2: Vec<String> = prompts2.iter().map(|_| password.to_owned()).collect();
+                    let final_resp =
+                        session.authenticate_keyboard_interactive_respond(r2).await;
+                    match final_resp {
+                        Ok(client::KeyboardInteractiveAuthResponse::Success) => {
+                            debug!("SSH authenticated (keyboard-interactive, 2nd response)");
+                        }
+                        other => {
+                            warn!("SSH keyboard-interactive final response: {:?}", other);
+                            return Err(anyhow::anyhow!(
+                                "Authentication failed, check username and password"
+                            ));
+                        }
+                    }
+                }
+                other => {
+                    warn!("SSH keyboard-interactive response: {:?}", other);
+                    return Err(anyhow::anyhow!(
+                        "Authentication failed, check username and password"
+                    ));
+                }
+            }
+        }
+        Ok(client::KeyboardInteractiveAuthResponse::Failure { .. }) => {
+            // Keyboard-interactive failed, fall back to simple password auth
+            debug!("SSH keyboard-interactive not available, trying password auth...");
+            session
+                .authenticate_password(username, password)
+                .await
+                .context("Authentication failed, check username and password")?;
+            debug!("SSH authenticated (password)");
+        }
+        Err(e) => {
+            return Err(e).context("Authentication failed, check username and password");
+        }
+    }
 
+    debug!("SSH opening channel...");
     let mut channel = session
         .channel_open_session()
         .await
-        .context("无法打开 SSH 通道")?;
+        .context("Failed to open SSH channel")?;
+    debug!("SSH channel opened");
 
-    // 请求 PTY（want_reply=true 确保 PTY 分配成功）
+    debug!("SSH requesting PTY {}x{}", cols, rows);
     channel
         .request_pty(true, "xterm-256color", cols, rows, 0, 0, &[])
         .await
-        .context("无法请求 PTY")?;
+        .context("Failed to request PTY")?;
+    debug!("SSH PTY allocated");
 
-    // 启动 shell
+    debug!("SSH starting shell...");
     channel
         .request_shell(false)
         .await
-        .context("无法启动 Shell")?;
+        .context("Failed to start shell")?;
+    debug!("SSH shell started");
 
     // 创建命令通道
     let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<terminal::Command>();
@@ -135,29 +213,50 @@ pub async fn connect(
 
     // 启动 IO 循环
     tokio::spawn(async move {
+        debug!("SSH IO loop started");
         loop {
             tokio::select! {
                 msg = channel.wait() => {
                     match msg {
-                        None => break,
+                        None => {
+                            debug!("SSH IO loop: channel closed (None)");
+                            break;
+                        }
                         Some(ref m) => match m {
                             ChannelMsg::Data { data } => {
+                                debug!("SSH recv: {} bytes", data.len());
                                 let output = SshOutput { data: data.to_vec() };
                                 let _ = app_handle.emit("ssh-output", output);
                             }
                             ChannelMsg::ExtendedData { data, .. } => {
+                                debug!("SSH recv (stderr): {} bytes", data.len());
                                 let output = SshOutput { data: data.to_vec() };
                                 let _ = app_handle.emit("ssh-output", output);
                             }
-                            ChannelMsg::Eof
-                            | ChannelMsg::Close
-                            | ChannelMsg::ExitStatus { .. }
-                            | ChannelMsg::ExitSignal { .. } => break,
-                            ChannelMsg::Success | ChannelMsg::Failure => {
-                                // server acknowledgement — keep listening
+                            ChannelMsg::Eof => {
+                                debug!("SSH IO loop: EOF");
+                                break;
+                            }
+                            ChannelMsg::Close => {
+                                debug!("SSH IO loop: Close");
+                                break;
+                            }
+                            ChannelMsg::ExitStatus { exit_status, .. } => {
+                                debug!("SSH IO loop: exit status {}", exit_status);
+                                break;
+                            }
+                            ChannelMsg::ExitSignal { signal_name, .. } => {
+                                debug!("SSH IO loop: exit signal {:?}", signal_name);
+                                break;
+                            }
+                            ChannelMsg::Success => {
+                                debug!("SSH IO loop: Success ack");
+                            }
+                            ChannelMsg::Failure => {
+                                debug!("SSH IO loop: Failure ack");
                             }
                             _ => {
-                                // unknown message — keep listening
+                                debug!("SSH IO loop: unhandled message, ignoring");
                             }
                         },
                     }
@@ -165,22 +264,31 @@ pub async fn connect(
                 cmd = cmd_rx.recv() => {
                     match cmd {
                         Some(terminal::Command::Write(data)) => {
+                            debug!("SSH send: {} bytes", data.len());
                             if channel.data(&data[..]).await.is_err() {
+                                debug!("SSH IO loop: write failed, exiting");
                                 break;
                             }
                         }
                         Some(terminal::Command::Resize(r, c)) => {
+                            debug!("SSH resize to {}x{}", c, r);
                             if channel.window_change(c, r, 0, 0).await.is_err() {
+                                debug!("SSH IO loop: resize failed, exiting");
                                 break;
                             }
                         }
-                        None => break,
+                        None => {
+                            debug!("SSH IO loop: command channel closed");
+                            break;
+                        }
                     }
                 }
             }
         }
+        debug!("SSH IO loop ended");
     });
 
+    info!("SSH session established: {}@{}:{}", username, host, port);
     Ok(())
 }
 
@@ -195,9 +303,11 @@ pub async fn resize(state: &SshState, rows: u32, cols: u32) -> Result<()> {
 }
 
 pub async fn disconnect(state: &SshState) -> Result<()> {
+    debug!("SSH disconnect requested");
     state.channel.close().await;
     *state.session.lock().await = None;
     *state.credentials.lock().await = None;
+    debug!("SSH disconnected");
     Ok(())
 }
 

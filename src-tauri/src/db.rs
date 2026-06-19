@@ -302,11 +302,14 @@ pub(crate) fn save_group(db: tauri::State<'_, DbState>, group: HostGroup) -> Res
 #[tauri::command]
 pub(crate) fn delete_group(db: tauri::State<'_, DbState>, id: i64) -> Result<(), String> {
     if db.has_child_groups(id).map_err(|e| e.to_string())? {
-        return Err("该分组下存在子分组，请先删除子分组".to_string());
+        return Err("Cannot delete group: it still contains subgroups".to_string());
     }
     let count = db.count_hosts_in_group(id).map_err(|e| e.to_string())?;
     if count > 0 {
-        return Err(format!("该分组及子分组下存在 {} 个 host，请先移除这些 host", count));
+        return Err(format!(
+            "Cannot delete group: {} host(s) still exist in this group and its subgroups",
+            count
+        ));
     }
     db.delete_group(id).map_err(|e| e.to_string())
 }

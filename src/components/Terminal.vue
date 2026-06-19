@@ -205,7 +205,7 @@ async function doConnect() {
   // ---- 本地终端模式 ----
   if (props.mode === 'local') {
     if (connectAttempts.value >= MAX_ATTEMPTS) {
-      error.value = `本地终端启动失败已达 ${MAX_ATTEMPTS} 次上限，请检查环境配置`;
+      error.value = t('terminal.error.maxAttemptsLocal', { n: MAX_ATTEMPTS });
       return;
     }
     connectAttempts.value++;
@@ -259,7 +259,7 @@ async function doConnect() {
   }
 
   if (connectAttempts.value >= MAX_ATTEMPTS) {
-    error.value = `已尝试 ${MAX_ATTEMPTS} 次连接均失败，请检查网络和配置`;
+    error.value = t('terminal.error.maxAttemptsSsh', { n: MAX_ATTEMPTS });
     return;
   }
 
