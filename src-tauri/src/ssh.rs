@@ -5,7 +5,9 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{mpsc, Mutex};
 
+use crate::db;
 use crate::terminal;
+use crate::vault;
 
 // ---- SSH Client Handler ----
 
@@ -317,16 +319,44 @@ pub async fn disconnect(state: &SshState) -> Result<()> {
 pub(crate) async fn ssh_connect(
     state: tauri::State<'_, SshState>,
     app_handle: tauri::AppHandle,
-    host: String,
-    port: u16,
-    username: String,
-    password: String,
+    db: tauri::State<'_, db::DbState>,
+    vault: tauri::State<'_, vault::Vault>,
+    connection_id: i64,
     rows: u32,
     cols: u32,
 ) -> Result<(), String> {
-    connect(&state, app_handle, &host, port, &username, &password, rows, cols)
-        .await
-        .map_err(|e| e.to_string())
+    // Load connection config from DB and decrypt password via vault.
+    let config = db
+        .get_connection_internal(connection_id)
+        .map_err(|e| format!("DB load failed: {}", e))?;
+
+    let password = match vault.load(connection_id, &config.password) {
+        Ok(p) => p,
+        Err(e) if config.password.starts_with("__KC__:") => {
+            // Legacy keychain-only reference lost — clear it and ask user to re-enter.
+            db.update_password(connection_id, "").ok();
+            return Err(format!(
+                "Keychain entry lost for this host — the stale reference has been cleared.\n\
+                 Right-click the host → Edit → enter the password → Save, then reconnect.\n\
+                 Original: {}",
+                e
+            ));
+        }
+        Err(e) => return Err(format!("Vault load failed: {}", e)),
+    };
+
+    connect(
+        &state,
+        app_handle,
+        &config.host,
+        config.port,
+        &config.username,
+        &password,
+        rows,
+        cols,
+    )
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

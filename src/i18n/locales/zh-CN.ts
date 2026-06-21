@@ -38,6 +38,7 @@ export default {
       hostPlaceholder: '192.168.1.1',
       usernamePlaceholder: 'root',
       passwordPlaceholder: '密码',
+      passwordKeepPlaceholder: '留空则保留原密码',
       save: '保存',
       cancel: '取消',
     },
@@ -97,7 +98,7 @@ export default {
       save: '💾 保存',
     },
     error: {
-      fillRequired: '请填写主机地址、用户名和密码',
+      fillRequired: '请填写主机地址和用户名',
       connectFailed: '连接失败：',
       localStartFailed: '启动本地终端失败：',
       maxAttemptsLocal: '本地终端启动失败已达 {n} 次上限，请检查环境配置',

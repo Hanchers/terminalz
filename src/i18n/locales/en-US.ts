@@ -38,6 +38,7 @@ export default {
       hostPlaceholder: '192.168.1.1',
       usernamePlaceholder: 'root',
       passwordPlaceholder: 'Password',
+      passwordKeepPlaceholder: 'Empty = keep current',
       save: 'Save',
       cancel: 'Cancel',
     },
@@ -97,7 +98,7 @@ export default {
       save: '💾 Save',
     },
     error: {
-      fillRequired: 'Please fill in host, username and password',
+      fillRequired: 'Please fill in host and username',
       connectFailed: 'Connection failed: ',
       localStartFailed: 'Local terminal failed: ',
       maxAttemptsLocal: 'Local terminal failed after {n} attempts, check your environment',

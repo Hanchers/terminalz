@@ -170,6 +170,7 @@
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { homeDir, desktopDir, downloadDir, documentDir } from '@tauri-apps/api/path'
 
 interface FileItem { name: string; is_dir: boolean; size: number; modified: string }
 interface ProgressPayload { file_name: string; current: number; total: number; percentage: number; status: string }
@@ -201,8 +202,8 @@ const ctxMenu = reactive<CtxMenu>({ visible: false, x: 0, y: 0, side: '', file: 
 
 // ---- 初始化 ----
 onMounted(async () => {
-  // Resolve home directory via Tauri (avoids macOS sandbox permission issues)
-  try { localPath.value = await invoke<string>('get_well_known_dir', { dirName: 'home' }) } catch (_) { localPath.value = '/' }
+  // Resolve home directory via Tauri path API (avoids macOS sandbox permission issues)
+  try { localPath.value = await homeDir() } catch (_) { localPath.value = '/' }
   loadLocal(localPath.value)
   loadRemote(remotePath.value)
   // 监听传输进度
@@ -421,8 +422,14 @@ function formatSize(bytes: number): string {
 }
 
 async function jumpToDir(dirName: string): Promise<void> {
+  const dirs: Record<string, () => Promise<string>> = {
+    home: homeDir,
+    desktop: desktopDir,
+    download: downloadDir,
+    document: documentDir,
+  }
   try {
-    const dir = await invoke<string>('get_well_known_dir', { dirName })
+    const dir = await (dirs[dirName] || homeDir)()
     loadLocal(dir)
   } catch (e) {
     statusMsg.value = 'Failed to resolve directory: ' + e

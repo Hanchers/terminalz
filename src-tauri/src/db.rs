@@ -32,18 +32,25 @@ impl DbState {
 
     // ---- Connection CRUD ----
 
+    /// List all connections.  Passwords are **masked** — frontend never sees
+    /// the raw password or vault reference.
     pub fn list_all(&self) -> Result<Vec<ConnectionConfig>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
             .prepare("SELECT id, name, host, port, username, password, group_id, remark FROM connections ORDER BY updated_at DESC")?;
         let rows = stmt.query_map([], |row| {
+            let raw: String = row.get(5)?;
             Ok(ConnectionConfig {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 host: row.get(2)?,
                 port: row.get::<_, i64>(3)? as u16,
                 username: row.get(4)?,
-                password: row.get(5)?,
+                password: if raw.is_empty() {
+                    String::new()
+                } else {
+                    "••••••••".to_string()
+                },
                 group_id: row.get(6)?,
                 remark: row.get(7)?,
             })
@@ -51,6 +58,50 @@ impl DbState {
         let mut list = Vec::new();
         for row in rows { list.push(row?); }
         Ok(list)
+    }
+
+    /// Get the raw `password` column value (vault reference or legacy plaintext).
+    /// Used internally by vault operations.
+    pub fn get_raw_password(&self, id: i64) -> Result<String> {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row(
+            "SELECT password FROM connections WHERE id = ?",
+            [id],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.into())
+    }
+
+    /// Load a single connection with **real** password column value (for internal
+    /// use only — never exposed to frontend).
+    pub fn get_connection_internal(&self, id: i64) -> Result<ConnectionConfig> {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row(
+            "SELECT id, name, host, port, username, password, group_id, remark FROM connections WHERE id = ?",
+            [id],
+            |row| {
+                Ok(ConnectionConfig {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    host: row.get(2)?,
+                    port: row.get::<_, i64>(3)? as u16,
+                    username: row.get(4)?,
+                    password: row.get(5)?,
+                    group_id: row.get(6)?,
+                    remark: row.get(7)?,
+                })
+            },
+        ).map_err(|e| e.into())
+    }
+
+    /// Update only the password column — used during vault migration.
+    pub fn update_password(&self, id: i64, new_value: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE connections SET password = ?, updated_at = datetime('now') WHERE id = ?",
+            rusqlite::params![new_value, id],
+        )?;
+        Ok(())
     }
 
     pub fn save(&self, config: &ConnectionConfig) -> Result<i64> {
@@ -277,14 +328,61 @@ pub(crate) fn list_connections(db: tauri::State<'_, DbState>) -> Result<Vec<Conn
 #[tauri::command]
 pub(crate) fn save_connection(
     db: tauri::State<'_, DbState>,
+    vault: tauri::State<'_, crate::vault::Vault>,
     config: ConnectionConfig,
 ) -> Result<ConnectionConfig, String> {
-    let new_id = db.save(&config).map_err(|e| e.to_string())?;
-    Ok(ConnectionConfig { id: new_id, ..config })
+    let password_value = if config.password.is_empty() && config.id > 0 {
+        // Editing without changing password — keep existing vault reference.
+        let old = db.get_raw_password(config.id).map_err(|e| e.to_string())?;
+        // If the old password is also empty (e.g. keychain entry was lost and the
+        // stale reference was cleared), reject the save so the user must enter one.
+        if old.is_empty() {
+            return Err(
+                "Password is required.  The previous credential was lost from the OS keychain.\n\
+                 Please enter a new password for this host before saving."
+                    .to_string(),
+            );
+        }
+        old
+    } else {
+        // New or changed password — encrypt and store.
+        if config.id > 0 {
+            vault
+                .store(config.id, &config.password)
+                .map_err(|e| format!("vault store: {}", e))?
+        } else {
+            let encrypted = vault
+                .encrypt_aes(&config.password)
+                .map_err(|e| format!("encrypt: {}", e))?;
+            format!("__AES__:{}", encrypted)
+        }
+    };
+
+    let mut config_with_pw = config.clone();
+    config_with_pw.password = password_value;
+    let new_id = db.save(&config_with_pw).map_err(|e| e.to_string())?;
+
+    Ok(ConnectionConfig {
+        id: new_id,
+        password: if config_with_pw.password.is_empty() {
+            String::new()
+        } else {
+            "••••••••".to_string()
+        },
+        ..config
+    })
 }
 
 #[tauri::command]
-pub(crate) fn delete_connection(db: tauri::State<'_, DbState>, id: i64) -> Result<(), String> {
+pub(crate) fn delete_connection(
+    db: tauri::State<'_, DbState>,
+    vault: tauri::State<'_, crate::vault::Vault>,
+    id: i64,
+) -> Result<(), String> {
+    // Clean up keychain entry before deleting the row.
+    if let Ok(raw) = db.get_raw_password(id) {
+        vault.delete(id, &raw);
+    }
     db.delete(id).map_err(|e| e.to_string())
 }
 

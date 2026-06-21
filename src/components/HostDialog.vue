@@ -4,30 +4,30 @@
       <div class="modal-title">{{ hostDialog.editingId ? $t('sidebar.hostDialog.edit') : $t('sidebar.hostDialog.new') }}</div>
       <div class="modal-field">
         <label>{{ $t('sidebar.hostDialog.name') }}</label>
-        <input v-model="hostDialog.name" :placeholder="$t('sidebar.hostDialog.namePlaceholder')" @keyup.enter="$emit('save')" />
+        <input v-model="form.name" :placeholder="$t('sidebar.hostDialog.namePlaceholder')" @keyup.enter="$emit('save', form)" />
       </div>
       <div class="modal-field">
         <label>{{ $t('sidebar.hostDialog.host') }}</label>
-        <input v-model="hostDialog.host" :placeholder="$t('sidebar.hostDialog.hostPlaceholder')" @keyup.enter="$emit('save')" />
+        <input v-model="form.host" :placeholder="$t('sidebar.hostDialog.hostPlaceholder')" @keyup.enter="$emit('save', form)" />
       </div>
       <div class="modal-row">
         <div class="modal-field small">
           <label>{{ $t('sidebar.hostDialog.port') }}</label>
-          <input v-model.number="hostDialog.port" type="number" placeholder="22" />
+          <input v-model.number="form.port" type="number" placeholder="22" />
         </div>
         <div class="modal-field">
           <label>{{ $t('sidebar.hostDialog.username') }}</label>
-          <input v-model="hostDialog.username" :placeholder="$t('sidebar.hostDialog.usernamePlaceholder')" @keyup.enter="$emit('save')" />
+          <input v-model="form.username" :placeholder="$t('sidebar.hostDialog.usernamePlaceholder')" @keyup.enter="$emit('save', form)" />
         </div>
       </div>
       <div class="modal-field">
         <label>{{ $t('sidebar.hostDialog.password') }}</label>
         <div class="password-wrap">
           <input
-            v-model="hostDialog.password"
+            v-model="form.password"
             :type="showHostPwd ? 'text' : 'password'"
-            :placeholder="$t('sidebar.hostDialog.passwordPlaceholder')"
-            @keyup.enter="$emit('save')"
+            :placeholder="hostDialog.editingId ? $t('sidebar.hostDialog.passwordKeepPlaceholder') : $t('sidebar.hostDialog.passwordPlaceholder')"
+            @keyup.enter="$emit('save', form)"
           />
           <button class="eye-btn" type="button" @click="showHostPwd = !showHostPwd" tabindex="-1">
             <svg v-if="showHostPwd" viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
@@ -41,11 +41,11 @@
       </div>
       <div class="modal-field">
         <label>{{ $t('sidebar.hostDialog.remark') }}</label>
-        <textarea v-model="hostDialog.remark" :placeholder="$t('sidebar.hostDialog.remarkPlaceholder')" rows="2"></textarea>
+        <textarea v-model="form.remark" :placeholder="$t('sidebar.hostDialog.remarkPlaceholder')" rows="2"></textarea>
       </div>
       <div class="modal-field">
         <label>{{ $t('sidebar.hostDialog.group') }}</label>
-        <select v-model="hostDialog.groupId">
+        <select v-model="form.groupId">
           <option :value="0">{{ $t('sidebar.hostDialog.noGroup') }}</option>
           <option v-for="g in flatGroupOptions" :key="g.id" :value="g.id">{{ g.label }}</option>
         </select>
@@ -57,9 +57,9 @@
             v-for="t in allTags"
             :key="t.id"
             class="tag-checkbox-label"
-            :style="{ borderColor: t.color, color: hostDialog.tagIds.includes(t.id) ? '#fff' : t.color, background: hostDialog.tagIds.includes(t.id) ? t.color : 'transparent' }"
+            :style="{ borderColor: t.color, color: form.tagIds.includes(t.id) ? '#fff' : t.color, background: form.tagIds.includes(t.id) ? t.color : 'transparent' }"
           >
-            <input type="checkbox" :checked="hostDialog.tagIds.includes(t.id)" @change="toggleTag(t.id)" style="display:none" />
+            <input type="checkbox" :checked="form.tagIds.includes(t.id)" @change="toggleTag(t.id)" style="display:none" />
             {{ t.name }}
           </label>
           <span v-if="allTags.length === 0" class="tag-none">{{ $t('sidebar.hostDialog.noTags') }}</span>
@@ -75,14 +75,14 @@
       </div>
       <div class="modal-actions">
         <button class="modal-btn cancel" @click="$emit('cancel')">{{ $t('sidebar.hostDialog.cancel') }}</button>
-        <button class="modal-btn primary" @click="$emit('save')">{{ $t('sidebar.hostDialog.save') }}</button>
+        <button class="modal-btn primary" @click="$emit('save', form)">{{ $t('sidebar.hostDialog.save') }}</button>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { invoke } from '@tauri-apps/api/core'
 
@@ -103,7 +103,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  save: []
+  save: [form: HostDialogState]
   cancel: []
   saved: []
 }>()
@@ -112,20 +112,43 @@ const showHostPwd = ref(false)
 const showQuickTag = ref(false)
 const newTag = reactive({ name: '', color: '#3fb950' })
 
+// Local reactive copy — never mutate the prop directly.
+const form = reactive<HostDialogState>({
+  visible: false, editingId: 0,
+  name: '', host: '', port: 22, username: '', password: '',
+  groupId: 0, tagIds: [], remark: ''
+})
+
+// Sync prop → local form whenever dialog opens or data changes.
+watch(() => props.hostDialog, (val) => {
+  Object.assign(form, {
+    visible: val.visible,
+    editingId: val.editingId,
+    name: val.name,
+    host: val.host,
+    port: val.port,
+    username: val.username,
+    password: val.password,
+    groupId: val.groupId,
+    tagIds: [...val.tagIds],
+    remark: val.remark,
+  })
+}, { immediate: true, deep: true })
+
 function toggleTag(tagId: number): void {
-  const idx = props.hostDialog.tagIds.indexOf(tagId)
-  if (idx >= 0) props.hostDialog.tagIds.splice(idx, 1)
-  else props.hostDialog.tagIds.push(tagId)
+  const idx = form.tagIds.indexOf(tagId)
+  if (idx >= 0) form.tagIds.splice(idx, 1)
+  else form.tagIds.push(tagId)
 }
 
 async function saveQuickTag(): Promise<void> {
   if (!newTag.name.trim()) return
   try {
     const tag = await invoke<Tag>('save_tag', { name: newTag.name.trim(), color: newTag.color })
-    props.hostDialog.tagIds.push(tag.id)
+    form.tagIds.push(tag.id)
     newTag.name = ''
     showQuickTag.value = false
-    emit('saved') // trigger parent to reload all
+    emit('saved')
   } catch (e) { alert(t('sidebar.error.failed') + e) }
 }
 </script>

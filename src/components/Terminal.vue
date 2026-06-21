@@ -111,7 +111,7 @@ import FileTransfer from './FileTransfer.vue';
 
 const { t } = useI18n();
 
-interface HostPrefill { id?: number; name?: string; host: string; port: number; username: string; password: string; remark?: string }
+interface HostPrefill { id: number; name?: string; host: string; port: number; username: string; password?: string; remark?: string }
 interface Tag { id: number; name: string; color: string }
 
 const props = defineProps<{ prefill: HostPrefill | null; mode: 'ssh' | 'local' | null }>()
@@ -122,11 +122,11 @@ const connecting = ref(false);
 const connectAttempts = ref(0);
 const MAX_ATTEMPTS = 3;
 const error = ref('');
+const connectionId = ref(0);
 const name = ref('');
 const host = ref('');
 const port = ref(22);
 const username = ref('');
-const password = ref('');
 const remark = ref('');
 const tags = ref<Tag[]>([]);
 const termContainer = ref<HTMLDivElement | null>(null);
@@ -140,11 +140,11 @@ let unlisten: (() => void) | null = null;
 
 watch(() => props.prefill, async (val: HostPrefill | null) => {
   if (val) {
+    connectionId.value = val.id || 0;
     name.value = val.name || '';
     host.value = val.host || '';
     port.value = val.port || 22;
     username.value = val.username || '';
-    password.value = val.password || '';
     remark.value = val.remark || '';
     error.value = '';
     // load tags for this host
@@ -253,8 +253,13 @@ async function doConnect() {
   }
 
   // ---- SSH 远程连接 ----
-  if (!host.value || !username.value || !password.value) {
+  if (!host.value || !username.value) {
     error.value = t('terminal.error.fillRequired');
+    return;
+  }
+
+  if (!connectionId.value) {
+    error.value = 'No connection ID — please select a saved host.';
     return;
   }
 
@@ -290,10 +295,7 @@ async function doConnect() {
     });
 
     await invoke('ssh_connect', {
-      host: host.value,
-      port: port.value,
-      username: username.value,
-      password: password.value,
+      connectionId: connectionId.value,
       rows: term.rows,
       cols: term.cols,
     });

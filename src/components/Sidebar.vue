@@ -159,7 +159,7 @@ interface Connection { id: number; name: string; host: string; port: number; use
 interface Tag { id: number; name: string; color: string }
 interface FlatOption { id: number; label: string; disabled?: boolean }
 interface CtxMenu { visible: boolean; x: number; y: number; type: string; id: number }
-interface HostDialog { visible: boolean; editingId: number; name: string; host: string; port: number; username: string; password: string; groupId: number; tagIds: number[]; remark: string }
+interface HostDialogState { visible: boolean; editingId: number; name: string; host: string; port: number; username: string; password: string; groupId: number; tagIds: number[]; remark: string }
 interface GroupDialog { visible: boolean; editingId: number; name: string; parentId: number; remark: string }
 interface TagDialog { visible: boolean; name: string; color: string }
 
@@ -185,7 +185,7 @@ function switchLanguage(id: SupportedLocale): void {
 
 const ctxMenu = reactive<CtxMenu>({ visible: false, x: 0, y: 0, type: '', id: 0 })
 
-const hostDialog = reactive<HostDialog>({
+const hostDialog = reactive<HostDialogState>({
   visible: false, editingId: 0,
   name: '', host: '', port: 22, username: '', password: '', groupId: 0, tagIds: [], remark: ''
 })
@@ -243,6 +243,27 @@ function selectHost(item: Connection): void {
 
 const flatGroupOptions = computed<FlatOption[]>(() => flattenGroups(groups.value, 0, 0))
 
+// ---- HostDialog save/cancel ----
+
+async function saveHostDialog(form: HostDialogState): Promise<void> {
+  if (!form.host || !form.username) return
+  try {
+    const saved = await invoke<{ id: number }>('save_connection', { config: {
+      id: form.editingId,
+      name: form.name || `${form.username}@${form.host}`,
+      host: form.host, port: form.port,
+      username: form.username, password: form.password,
+      group_id: form.groupId,
+      remark: form.remark
+    }})
+    await invoke('set_host_tags', { hostId: saved.id, tagIds: form.tagIds }).catch(() => {})
+    closeHostDialog()
+    await loadAll()
+  } catch (e) { alert(t('sidebar.error.saveFailed') + e) }
+}
+
+function closeHostDialog(): void { hostDialog.visible = false }
+
 function flattenGroups(list: Group[], parentId: number, depth: number): FlatOption[] {
   let result: FlatOption[] = []
   for (const g of list) {
@@ -284,30 +305,9 @@ async function editHost(id: number): Promise<void> {
   Object.assign(hostDialog, {
     visible: true, editingId: c.id, tagIds,
     name: c.name || '', host: c.host, port: c.port || 22,
-    username: c.username, password: c.password, groupId: c.group_id || 0, remark: c.remark || ''
+    username: c.username, password: '', groupId: c.group_id || 0, remark: c.remark || ''
   })
 }
-
-async function saveHostDialog(): Promise<void> {
-  if (!hostDialog.host || !hostDialog.username) return
-  try {
-    const saved = await invoke<{ id: number }>('save_connection', { config: {
-      id: hostDialog.editingId,
-      name: hostDialog.name || `${hostDialog.username}@${hostDialog.host}`,
-      host: hostDialog.host, port: hostDialog.port,
-      username: hostDialog.username, password: hostDialog.password,
-      group_id: hostDialog.groupId,
-      remark: hostDialog.remark
-    }})
-    // 保存标签关联
-    const hostId = saved.id
-    await invoke('set_host_tags', { hostId, tagIds: hostDialog.tagIds }).catch(() => {})
-    closeHostDialog()
-    await loadAll()
-  } catch (e) { alert(t('sidebar.error.saveFailed') + e) }
-}
-
-function closeHostDialog(): void { hostDialog.visible = false }
 
 async function deleteHost(id: number): Promise<void> {
   ctxMenu.visible = false

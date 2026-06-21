@@ -1,3 +1,4 @@
+mod crypto;
 mod db;
 mod local_term;
 mod models;
@@ -5,12 +6,14 @@ mod ssh;
 mod sftp;
 mod sysinfo;
 mod terminal;
+mod vault;
 
 use db::DbState;
 use local_term::LocalTermState;
 use ssh::SshState;
 use sftp::FileEntry;
 use tauri::Manager;
+use vault::Vault;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -26,13 +29,18 @@ pub fn run() {
             }
 
             let app_handle = app.handle();
-            let db_path = app_handle
+            let app_data_dir = app_handle
                 .path()
                 .app_data_dir()
-                .map_err(|e| e.to_string())?
-                .join("terminalz.db");
+                .map_err(|e| e.to_string())?;
+            let db_path = app_data_dir.join("terminalz.db");
             let db = DbState::new(&db_path).map_err(|e| e.to_string())?;
+
+            // Init credential vault (keychain + AES fallback).
+            let vault = Vault::new(&app_data_dir.to_string_lossy());
+
             app.manage(db);
+            app.manage(vault);
             Ok(())
         })
         .manage(SshState::new())
@@ -60,7 +68,6 @@ pub fn run() {
             sysinfo::local_sys_info,
             // Local filesystem
             read_local_dir,
-            get_well_known_dir,
             // DB — connections
             db::list_connections,
             db::save_connection,
@@ -83,25 +90,6 @@ pub fn run() {
 }
 
 // ---- 本地文件系统浏览 ----
-
-/// Resolve a well-known directory (e.g. Downloads, Documents, Desktop).
-/// Uses Tauri's OS-specific path resolution which handles macOS permissions better.
-#[tauri::command]
-fn get_well_known_dir(dir_name: String, app_handle: tauri::AppHandle) -> Result<String, String> {
-    let resolver = app_handle.path();
-    let path = match dir_name.as_str() {
-        "download" => resolver.download_dir(),
-        "document" => resolver.document_dir(),
-        "desktop" => resolver.desktop_dir(),
-        "home" => resolver.home_dir(),
-        "picture" => resolver.picture_dir(),
-        "video" => resolver.video_dir(),
-        "audio" => resolver.audio_dir(),
-        _ => resolver.home_dir(),
-    }
-    .map_err(|e| e.to_string())?;
-    Ok(path.to_string_lossy().to_string())
-}
 
 #[tauri::command]
 fn read_local_dir(path: String, app_handle: tauri::AppHandle) -> Result<Vec<FileEntry>, String> {
