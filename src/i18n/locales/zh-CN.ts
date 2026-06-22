@@ -39,6 +39,8 @@ export default {
       usernamePlaceholder: 'root',
       passwordPlaceholder: '密码',
       passwordKeepPlaceholder: '留空则保留原密码',
+      saveConnect: '保存并连接',
+      connecting: '连接中...',
       save: '保存',
       cancel: '取消',
     },

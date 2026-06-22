@@ -76,7 +76,16 @@
       <div class="modal-actions">
         <button class="modal-btn cancel" @click="$emit('cancel')">{{ $t('sidebar.hostDialog.cancel') }}</button>
         <button class="modal-btn primary" @click="$emit('save', form)">{{ $t('sidebar.hostDialog.save') }}</button>
+        <button
+          class="modal-btn connect"
+          :disabled="connecting"
+          @click="$emit('save-connect', form)"
+        >
+          <span v-if="connecting" class="spinner"></span>
+          {{ connecting ? $t('sidebar.hostDialog.connecting') : $t('sidebar.hostDialog.saveConnect') }}
+        </button>
       </div>
+      <p v-if="testError" class="test-fail-row">{{ testError }}</p>
     </div>
   </div>
 </template>
@@ -104,12 +113,15 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   save: [form: HostDialogState]
+  'save-connect': [form: HostDialogState]
   cancel: []
   saved: []
 }>()
 
 const showHostPwd = ref(false)
 const showQuickTag = ref(false)
+const connecting = ref(false)
+const testError = ref('')
 const newTag = reactive({ name: '', color: '#3fb950' })
 
 // Local reactive copy — never mutate the prop directly.
@@ -134,6 +146,11 @@ watch(() => props.hostDialog, (val) => {
     remark: val.remark,
   })
 }, { immediate: true, deep: true })
+
+// Allow parent to set connecting / error state.
+function setConnecting(v: boolean) { connecting.value = v }
+function showError(msg: string) { testError.value = msg }
+defineExpose({ setConnecting, showError })
 
 function toggleTag(tagId: number): void {
   const idx = form.tagIds.indexOf(tagId)
@@ -170,4 +187,21 @@ async function saveQuickTag(): Promise<void> {
 .btn-tag-add:hover { border-color: var(--color-accent); color: var(--color-accent); }
 .quick-tag-row { display: flex; gap: 6px; margin-top: 6px; align-items: center; }
 .tag-name-input { flex: 1; min-width: 260px; padding: 4px 8px; font-size: 12px; background: var(--color-bg-input); border: 1px solid var(--color-border-input); border-radius: 4px; color: var(--color-text-primary); }
+
+.modal-btn.connect {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 16px; font-size: 12px;
+  background: var(--color-accent); color: var(--color-text-white);
+  border: 1px solid var(--color-accent); border-radius: 4px;
+  cursor: pointer; transition: all 0.15s;
+}
+.modal-btn.connect:hover:not(:disabled) { opacity: 0.9; }
+.modal-btn.connect:disabled { opacity: 0.6; cursor: not-allowed; }
+.spinner {
+  width: 12px; height: 12px; border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: var(--color-text-white); border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.test-fail-row { margin: 6px 0 0; padding: 0; font-size: 12px; color: var(--color-danger); }
 </style>

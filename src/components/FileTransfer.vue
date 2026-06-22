@@ -152,11 +152,14 @@
         </template>
       </div>
 
-      <!-- 进度条 -->
-      <div v-if="progressMsg" class="ft-progress-bar">
-        <span class="ft-progress-text">{{ progressMsg }}</span>
-        <div class="ft-progress-inner">
-          <div class="ft-progress-fill" :style="{ width: progressPct + '%' }"></div>
+      <!-- 多任务进度条 -->
+      <div v-if="activeCount > 0" class="ft-progress-area">
+        <div v-for="t in transferList" :key="t.file_name" class="ft-progress-row">
+          <span class="ft-progress-name">{{ t.displayName }}</span>
+          <span class="ft-progress-pct">{{ t.pct }}%</span>
+          <div class="ft-progress-inner">
+            <div class="ft-progress-fill" :style="{ width: t.pct + '%' }"></div>
+          </div>
         </div>
       </div>
 
@@ -192,13 +195,26 @@ const filteredLocalFiles = computed(() => {
 })
 
 const statusMsg = ref('')
-const progressMsg = ref('')
-const progressPct = ref(0)
+const activeTransfers = reactive<Map<string, ProgressPayload>>(new Map())
 const openDropdown = ref<string | null>(null)
 let unlisten: UnlistenFn | null = null
 
 const selected = reactive<SelectState>({ local: null, remote: null })
 const ctxMenu = reactive<CtxMenu>({ visible: false, x: 0, y: 0, side: '', file: null })
+
+// ---- 多任务进度聚合 ----
+const activeCount = computed(() => activeTransfers.size)
+const transferList = computed(() => {
+  const items: { file_name: string; displayName: string; pct: number }[] = []
+  for (const t of activeTransfers.values()) {
+    items.push({
+      file_name: t.file_name,
+      displayName: t.file_name.length > 28 ? t.file_name.slice(0, 25) + '...' : t.file_name,
+      pct: Math.round(t.percentage),
+    })
+  }
+  return items
+})
 
 // ---- 初始化 ----
 onMounted(async () => {
@@ -206,12 +222,12 @@ onMounted(async () => {
   try { localPath.value = await homeDir() } catch (_) { localPath.value = '/' }
   loadLocal(localPath.value)
   loadRemote(remotePath.value)
-  // 监听传输进度
+  // 监听传输进度 — multi-task tracker, one entry per file.
   unlisten = await listen('sftp-progress', (e) => {
-    progressPct.value = Math.round(e.payload.percentage)
-    progressMsg.value = `${e.payload.file_name}: ${e.payload.status} (${progressPct.value}%)`
-    if (e.payload.status === 'completed' || e.payload.status === 'error') {
-      setTimeout(() => { progressMsg.value = '' }, 2000)
+    const p: ProgressPayload = e.payload as ProgressPayload
+    activeTransfers.set(p.file_name, p)
+    if (p.status === 'completed' || p.status === 'error') {
+      setTimeout(() => { activeTransfers.delete(p.file_name) }, 2500)
     }
   })
   // 窗口点击关闭菜单
@@ -300,7 +316,6 @@ async function onDrop(targetSide: string, e: DragEvent): Promise<void> {
 }
 
 async function uploadFile(localFull: string): Promise<void> {
-  progressMsg.value = 'Uploading...'
   try {
     await invoke('sftp_upload', {
       localPaths: [localFull],
@@ -315,7 +330,6 @@ async function uploadFile(localFull: string): Promise<void> {
 async function downloadFile(remoteFull: string): Promise<void> {
   const name = remoteFull.split('/').pop() || 'download'
   const localFull = localPath.value.replace(/\/+$/, '') + '/' + name
-  progressMsg.value = 'Downloading...'
   try {
     await invoke('sftp_download', { remotePath: remoteFull, localPath: localFull })
     statusMsg.value = 'Download done'
@@ -489,9 +503,11 @@ async function jumpToDir(dirName: string): Promise<void> {
 .ctx-danger { color: var(--color-danger); }
 .ctx-sep { height: 1px; background: var(--color-border-secondary); margin: 3px 6px; }
 
-.ft-progress-bar { padding: 6px 16px; border-top: 1px solid var(--color-border-secondary); display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-.ft-progress-text { font-size: 11px; color: var(--color-text-secondary); white-space: nowrap; }
-.ft-progress-inner { flex: 1; height: 4px; background: var(--color-border-secondary); border-radius: 2px; overflow: hidden; }
+.ft-progress-area { border-top: 1px solid var(--color-border-secondary); padding: 4px 12px; flex-shrink: 0; max-height: 120px; overflow-y: auto; }
+.ft-progress-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+.ft-progress-name { font-size: 11px; color: var(--color-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
+.ft-progress-pct { font-size: 10px; color: var(--color-text-tertiary); width: 32px; text-align: right; flex-shrink: 0; }
+.ft-progress-inner { flex: 2; min-width: 100px; height: 4px; background: var(--color-border-secondary); border-radius: 2px; overflow: hidden; }
 .ft-progress-fill { height: 100%; background: var(--color-progress); border-radius: 2px; transition: width 0.3s; }
 
 .ft-statusbar { padding: 4px 12px; font-size: 11px; color: var(--color-text-tertiary); border-top: 1px solid var(--color-border-secondary); flex-shrink: 0; }

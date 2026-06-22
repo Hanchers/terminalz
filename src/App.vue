@@ -5,6 +5,7 @@
       <Sidebar
         :collapsed="sidebarCollapsed"
         @select-host="onSelectHost"
+        @connect-host="onConnectHost"
         @select-local="onSelectLocal"
         @toggle="sidebarCollapsed = !sidebarCollapsed"
       />
@@ -26,6 +27,7 @@
         <Terminal
           :prefill="selectedHost"
           :mode="terminalMode"
+          :auto-connect="triggerConnect"
           @connection-change="onConnectionChange"
         />
       </div>
@@ -68,10 +70,17 @@ const selectedHost = ref<HostConfig | null>(null)
 const terminalMode = ref<'ssh' | 'local' | null>(null)
 const sidebarCollapsed = ref(false)
 const statusCollapsed = ref(false)
+const triggerConnect = ref(0)
 
 function onSelectHost(config: HostConfig) {
   selectedHost.value = { ...config }
   terminalMode.value = 'ssh'
+}
+
+function onConnectHost(config: HostConfig) {
+  selectedHost.value = { ...config }
+  terminalMode.value = 'ssh'
+  triggerConnect.value++
 }
 
 function onSelectLocal() {

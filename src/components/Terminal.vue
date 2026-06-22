@@ -114,7 +114,7 @@ const { t } = useI18n();
 interface HostPrefill { id: number; name?: string; host: string; port: number; username: string; password?: string; remark?: string }
 interface Tag { id: number; name: string; color: string }
 
-const props = defineProps<{ prefill: HostPrefill | null; mode: 'ssh' | 'local' | null }>()
+const props = defineProps<{ prefill: HostPrefill | null; mode: 'ssh' | 'local' | null; autoConnect: number }>()
 const emit = defineEmits<{ 'connection-change': [connected: boolean] }>()
 
 const connected = ref(false);
@@ -137,6 +137,16 @@ let fitAddon: FitAddon | null = null;
 let unlisten: (() => void) | null = null;
 
 // ---- 外部 prefill ---
+
+// Auto-connect when triggered by "Save & Connect".
+// Use props.prefill directly to avoid race with the prefill watcher that
+// sets connectionId (prefill and autoConnect may update in the same tick).
+watch(() => props.autoConnect, (n) => {
+  if (n > 0 && props.mode === 'ssh' && props.prefill?.id && !connected.value) {
+    connectionId.value = props.prefill.id
+    doConnect()
+  }
+})
 
 watch(() => props.prefill, async (val: HostPrefill | null) => {
   if (val) {

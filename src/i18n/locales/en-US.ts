@@ -39,6 +39,8 @@ export default {
       usernamePlaceholder: 'root',
       passwordPlaceholder: 'Password',
       passwordKeepPlaceholder: 'Empty = keep current',
+      saveConnect: 'Save & Connect',
+      connecting: 'Connecting...',
       save: 'Save',
       cancel: 'Cancel',
     },

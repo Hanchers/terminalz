@@ -91,10 +91,12 @@
 
     <!-- ======== 弹窗：编辑/新建 Host ======== -->
     <HostDialog
+      ref="hostDialogRef"
       :host-dialog="hostDialog"
       :all-tags="allTags"
       :flat-group-options="flatGroupOptions"
       @save="saveHostDialog"
+      @save-connect="saveConnectHost"
       @cancel="closeHostDialog"
       @saved="loadAll"
     />
@@ -164,7 +166,7 @@ interface GroupDialog { visible: boolean; editingId: number; name: string; paren
 interface TagDialog { visible: boolean; name: string; color: string }
 
 const props = defineProps<{ collapsed: boolean }>()
-const emit = defineEmits<{ 'select-host': [config: Record<string, any>]; 'select-local': []; 'toggle': [] }>()
+const emit = defineEmits<{ 'select-host': [config: Record<string, any>]; 'connect-host': [config: Record<string, any>]; 'select-local': []; 'toggle': [] }>()
 
 const activeMenu = ref('hosts')
 const selectedId = ref(0)
@@ -189,6 +191,7 @@ const hostDialog = reactive<HostDialogState>({
   visible: false, editingId: 0,
   name: '', host: '', port: 22, username: '', password: '', groupId: 0, tagIds: [], remark: ''
 })
+const hostDialogRef = ref<InstanceType<typeof HostDialog> | null>(null)
 const groupDialog = reactive<GroupDialog>({
   visible: false, editingId: 0,
   name: '', parentId: 0, remark: ''
@@ -263,6 +266,33 @@ async function saveHostDialog(form: HostDialogState): Promise<void> {
 }
 
 function closeHostDialog(): void { hostDialog.visible = false }
+
+async function saveConnectHost(form: HostDialogState): Promise<void> {
+  if (!form.host || !form.username) return
+  hostDialogRef.value?.setConnecting(true)
+  try {
+    const saved = await invoke<{ id: number }>('save_connection', { config: {
+      id: form.editingId,
+      name: form.name || `${form.username}@${form.host}`,
+      host: form.host, port: form.port,
+      username: form.username, password: form.password,
+      group_id: form.groupId,
+      remark: form.remark,
+    }})
+    await invoke('set_host_tags', { hostId: saved.id, tagIds: form.tagIds }).catch(() => {})
+    closeHostDialog()
+    await loadAll()
+    // Find the connection and trigger direct connect.
+    const conn = connections.value.find(c => c.id === saved.id)
+    if (conn) {
+      emit('connect-host', { ...conn, name: conn.name || conn.host })
+    }
+  } catch (e) {
+    hostDialogRef.value?.showError(String(e))
+  } finally {
+    hostDialogRef.value?.setConnecting(false)
+  }
+}
 
 function flattenGroups(list: Group[], parentId: number, depth: number): FlatOption[] {
   let result: FlatOption[] = []
