@@ -1,143 +1,124 @@
 <template>
   <div id="app-container">
     <div class="app-layout">
-      <!-- 左侧面板：Hosts 菜单 -->
-      <Sidebar
-        :collapsed="sidebarCollapsed"
-        @select-host="onSelectHost"
-        @connect-host="onConnectHost"
-        @select-local="onSelectLocal"
-        @toggle="sidebarCollapsed = !sidebarCollapsed"
+      <!-- Tab Bar -->
+      <TabBar
+        v-model="activeTab"
+        :tabs="openTabs"
+        @close-tab="closeTab"
+        @new-tab="newEmptyTab"
       />
 
-      <!-- 左侧切换按钮 -->
-      <button
-        class="edge-toggle toggle-left"
-        @click="sidebarCollapsed = !sidebarCollapsed"
-        :title="sidebarCollapsed ? $t('app.expandSidebar') : $t('app.collapseSidebar')"
-      >
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
-          <path v-if="sidebarCollapsed" d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/>
-          <path v-else d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/>
-        </svg>
-      </button>
-
-      <!-- 中间区域：终端 -->
-      <div class="main-area">
-        <Terminal
-          :prefill="selectedHost"
-          :mode="terminalMode"
-          :auto-connect="triggerConnect"
-          @connection-change="onConnectionChange"
+      <!-- Content Area -->
+      <div class="app-content">
+        <!-- Vault Tab -->
+        <VaultTab
+          v-if="activeTab === 'vault'"
+          @open-host="openHostTab"
+          @connect-host="connectHost"
+          @new-tab="newEmptyTab"
         />
+
+        <!-- SFTP Tab -->
+        <SftpTab
+          v-if="activeTab === 'sftp'"
+          :active-host-id="activeTerminalId"
+        />
+
+        <!-- Terminal Tabs -->
+        <TerminalView
+          v-for="tab in openTabs"
+          v-show="activeTab === tab.id"
+          :key="tab.id"
+          :tab="tab"
+          @connection-change="(connected: boolean) => onTabConnection(tab.id, connected)"
+          @close="closeTab(tab.id)"
+        />
+
+        <!-- Welcome (no terminals open) -->
+        <div v-if="activeTab === 'vault' || activeTab === 'sftp' || openTabs.length === 0" />
       </div>
-
-      <!-- 右侧切换按钮 -->
-      <button
-        v-if="isConnected"
-        class="edge-toggle toggle-right"
-        @click="statusCollapsed = !statusCollapsed"
-        :title="statusCollapsed ? $t('app.expandStatus') : $t('app.collapseStatus')"
-      >
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
-          <path v-if="statusCollapsed" d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/>
-          <path v-else d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/>
-        </svg>
-      </button>
-
-      <!-- 右侧面板：服务器状态 -->
-      <ServerStatus
-        v-if="isConnected"
-        :active="isConnected"
-        :collapsed="statusCollapsed"
-        :connection-mode="terminalMode"
-        @toggle="statusCollapsed = !statusCollapsed"
-      />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import Sidebar from './components/Sidebar.vue'
-import Terminal from './components/Terminal.vue'
-import ServerStatus from './components/ServerStatus.vue'
+import TabBar from './components/TabBar.vue'
+import VaultTab from './components/VaultTab.vue'
+import SftpTab from './components/SftpTab.vue'
+import TerminalView from './components/TerminalView.vue'
 
+interface TabInfo { id: number; name?: string; host: string; port: number; username: string; connected: boolean; connecting: boolean }
 interface HostConfig { id: number; name?: string; host: string; port: number; username: string; remark?: string }
 
-const isConnected = ref(false)
-const selectedHost = ref<HostConfig | null>(null)
-const terminalMode = ref<'ssh' | 'local' | null>(null)
-const sidebarCollapsed = ref(false)
-const statusCollapsed = ref(false)
-const triggerConnect = ref(0)
+const activeTab = ref<string | number>('vault')
+const openTabs = ref<TabInfo[]>([])
+const activeTerminalId = ref<number | null>(null)
+let nextTabId = 1000
 
-function onSelectHost(config: HostConfig) {
-  selectedHost.value = { ...config }
-  terminalMode.value = 'ssh'
-}
-
-function onConnectHost(config: HostConfig) {
-  selectedHost.value = { ...config }
-  terminalMode.value = 'ssh'
-  triggerConnect.value++
-}
-
-function onSelectLocal() {
-  selectedHost.value = null
-  terminalMode.value = 'local'
-}
-
-function onConnectionChange(connected: boolean) {
-  isConnected.value = connected
-  if (!connected) {
-    selectedHost.value = null
-    terminalMode.value = null
+function openHostTab(config: HostConfig) {
+  const existing = openTabs.value.find(t => t.id === config.id)
+  if (existing) {
+    activeTab.value = existing.id
+    return
   }
+  const tab: TabInfo = {
+    id: config.id,
+    name: config.name || config.host,
+    host: config.host,
+    port: config.port,
+    username: config.username,
+    connected: false,
+    connecting: false,
+  }
+  openTabs.value.push(tab)
+  activeTab.value = tab.id
+  activeTerminalId.value = tab.id
+}
+
+function connectHost(config: HostConfig) {
+  // Ensure tab exists
+  let tab = openTabs.value.find(t => t.id === config.id)
+  if (!tab) {
+    tab = { id: config.id, name: config.name || config.host, host: config.host, port: config.port, username: config.username, connected: false, connecting: false }
+    openTabs.value.push(tab)
+  }
+  tab.connecting = false // reset for re-connect
+  activeTab.value = tab.id
+  activeTerminalId.value = tab.id
+}
+
+function newEmptyTab() {
+  const id = nextTabId++
+  const tab: TabInfo = { id, name: 'New Tab', host: 'localhost', port: 22, username: '', connected: false, connecting: false }
+  openTabs.value.push(tab)
+  activeTab.value = tab.id
+}
+
+function closeTab(id: number) {
+  openTabs.value = openTabs.value.filter(t => t.id !== id)
+  if (activeTab.value === id) {
+    if (openTabs.value.length > 0) {
+      const idx = openTabs.value.findIndex(t => t.id === id)
+      const next = openTabs.value[Math.min(idx, openTabs.value.length - 1)]
+      activeTab.value = next ? next.id : 'vault'
+    } else {
+      activeTab.value = 'vault'
+    }
+  }
+  if (activeTerminalId.value === id) activeTerminalId.value = openTabs.value.length > 0 ? openTabs.value[openTabs.value.length - 1].id : null
+}
+
+function onTabConnection(id: number, connected: boolean) {
+  const tab = openTabs.value.find(t => t.id === id)
+  if (tab) { tab.connected = connected; tab.connecting = false }
+  if (connected) activeTerminalId.value = id
 }
 </script>
 
 <style>
-/* ---- 左-中-右 布局 ---- */
-.app-layout {
-  display: flex;
-  width: 100%;
-  height: 100%;
-}
-
-.main-area {
-  flex: 1;
-  min-width: 0;
-  height: 100%;
-  overflow: hidden;
-}
-
-/* ---- 边缘切换按钮 ---- */
-.edge-toggle {
-  width: 20px;
-  min-width: 20px;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  color: var(--color-text-tertiary);
-  cursor: pointer;
-  transition: all 0.15s;
-  z-index: 5;
-}
-
-.edge-toggle:hover {
-  background: var(--color-bg-hover-alt);
-  color: var(--color-text-secondary);
-}
-
-.toggle-left {
-  border-right: 1px solid var(--color-border-primary);
-}
-
-.toggle-right {
-  border-left: 1px solid var(--color-border-primary);
-}
+#app-container { width: 100%; height: 100vh; overflow: hidden; }
+.app-layout { display: flex; flex-direction: column; width: 100%; height: 100%; }
+.app-content { flex: 1; min-height: 0; overflow: hidden; }
 </style>
