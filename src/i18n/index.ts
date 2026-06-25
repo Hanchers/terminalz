@@ -18,10 +18,10 @@ function getSavedLocale(): SupportedLocale {
       return saved as SupportedLocale
     }
   } catch (_) {}
-  // 默认跟随浏览器语言
-  const nav = navigator.language
-  if (nav.startsWith('zh')) return 'zh-CN'
-  return 'en-US'
+  // Detect system language — check full list, not just primary.
+  const langs = navigator.languages || [navigator.language]
+  const match = langs.find(l => l.startsWith('zh'))
+  return match ? 'zh-CN' : 'en-US'
 }
 
 export function saveLocale(id: SupportedLocale): void {

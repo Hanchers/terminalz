@@ -45,14 +45,15 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { currentTheme, themes, setTheme } from '../themes/index'
-import { locales, saveLocale, type SupportedLocale } from '../i18n'
+import { locales } from '../i18n'
 
 const { locale } = useI18n({ useScope: 'global' })
 const currentLocale = computed(() => locale.value)
 const languageOptions = locales
+const emit = defineEmits<{ 'change-locale': [id: string] }>()
 
 function applyTheme(id: string) { setTheme(id) }
-function switchLang(id: string) { locale.value = id; saveLocale(id as SupportedLocale) }
+function switchLang(id: string) { emit('change-locale', id) }
 </script>
 
 <style scoped>

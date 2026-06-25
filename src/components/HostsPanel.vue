@@ -2,14 +2,14 @@
   <div class="hosts-panel">
     <!-- Toolbar -->
     <div class="hp-toolbar">
-      <input v-model="search" class="hp-search" placeholder="Filter hosts..." @input="onSearch" />
-      <button class="hp-btn" @click="$emit('new-group')">+ Group</button>
-      <button class="hp-btn" @click="$emit('new-host')">+ Host</button>
+      <input v-model="search" class="hp-search" :placeholder="$t('hostsPanel.filterPlaceholder')" @input="onSearch" />
+      <button class="hp-btn" @click="$emit('new-group')">{{ $t('hostsPanel.newGroup') }}</button>
+      <button class="hp-btn" @click="$emit('new-host')">{{ $t('hostsPanel.newHost') }}</button>
     </div>
 
     <!-- Breadcrumb -->
     <div class="hp-breadcrumb">
-      <span class="hp-bc-item" :class="{ active: currentGroup === 0 }" @click="navigateGroup(0)">All Hosts</span>
+      <span class="hp-bc-item" :class="{ active: currentGroup === 0 }" @click="navigateGroup(0)">{{ $t('hostsPanel.allHosts') }}</span>
       <template v-for="g in breadcrumb" :key="g.id">
         <span class="hp-bc-arrow">›</span>
         <span class="hp-bc-item" :class="{ active: g.id === currentGroup }" @click="navigateGroup(g.id)">{{ g.name }}</span>
@@ -19,7 +19,7 @@
     <div class="hp-scroll">
       <!-- Groups -->
       <div class="hp-section" v-if="groups.length > 0">
-        <div class="hp-section-title">Groups</div>
+        <div class="hp-section-title">{{ $t('hostsPanel.groups') }}</div>
         <div class="hp-cards">
           <div
             v-for="g in groups"
@@ -37,7 +37,7 @@
 
       <!-- Hosts -->
       <div class="hp-section">
-        <div class="hp-section-title">Hosts</div>
+        <div class="hp-section-title">{{ $t('hostsPanel.hosts') }}</div>
         <div class="hp-cards" v-if="hosts.length > 0">
           <div
             v-for="h in hosts"
@@ -54,7 +54,7 @@
             </div>
           </div>
         </div>
-        <div v-else class="hp-empty">No hosts</div>
+        <div v-else class="hp-empty">{{ $t('hostsPanel.noHosts') }}</div>
       </div>
     </div>
   </div>

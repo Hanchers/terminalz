@@ -6,13 +6,13 @@
         <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor">
           <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM9 6c0-1.66 1.34-3 3-3s3 1.34 3 3v2H9V6z"/>
         </svg>
-        <span>Vault</span>
+        <span>{{ $t('tabs.vault') }}</span>
       </button>
       <button class="tab" :class="{ active: modelValue === 'sftp' }" @click="$emit('update:modelValue', 'sftp')">
         <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor">
           <path d="M20 6h-8l-2-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2z"/>
         </svg>
-        <span>SFTP</span>
+        <span>{{ $t('tabs.sftp') }}</span>
       </button>
 
       <!-- Separator -->

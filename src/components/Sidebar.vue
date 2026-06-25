@@ -154,7 +154,7 @@ import HostDialog from './HostDialog.vue'
 import GroupDialog from './GroupDialog.vue'
 import TagDialog from './TagDialog.vue'
 
-const { t, locale } = useI18n()
+const { t, locale } = useI18n({ useScope: 'global' })
 
 interface Group { id: number; parent_id: number; name: string; remark: string }
 interface Connection { id: number; name: string; host: string; port: number; username: string; password: string; group_id: number; remark: string }

@@ -3,7 +3,7 @@
     <div class="ft-panel">
       <!-- 标题栏 -->
       <div class="ft-titlebar">
-        <span class="ft-title">SFTP File Manager</span>
+        <span class="ft-title">{{ $t('sftp.title') }}</span>
         <button class="ft-close-btn" @click="$emit('close')">&times;</button>
       </div>
 
@@ -11,15 +11,15 @@
         <!-- ===== 左侧：本地文件系统 ===== -->
         <div class="ft-column">
           <div class="ft-col-header">
-            <span class="ft-col-title">Local</span>
+            <span class="ft-col-title">{{ $t('sftp.local') }}</span>
             <div class="ft-col-actions">
-              <button class="ft-action-btn" @click="showHiddenLocal = !showHiddenLocal" :title="showHiddenLocal ? 'Hide dotfiles' : 'Show dotfiles'">{{ showHiddenLocal ? '👁' : '👁‍🗨' }}</button>
-              <button class="ft-action-btn" @click="refreshLocal" title="Refresh">↻</button>
+              <button class="ft-action-btn" @click="showHiddenLocal = !showHiddenLocal" :title="showHiddenLocal ? $t('sftp.hideDotfiles') : $t('sftp.showDotfiles')">{{ showHiddenLocal ? '👁' : '👁‍🗨' }}</button>
+              <button class="ft-action-btn" @click="refreshLocal" :title="$t('sftp.refresh')">↻</button>
               <!-- Actions 下拉 -->
               <div class="ft-dropdown" ref="localDropdownEl">
-                <button class="ft-action-btn" @click="toggleDropdown('local')">Actions ▾</button>
+                <button class="ft-action-btn" @click="toggleDropdown('local')">{{ $t('sftp.actions') }} ▾</button>
                 <div v-if="openDropdown === 'local'" class="ft-dropdown-menu">
-                  <div class="ft-dropdown-item" @click="promptNewDir('local')">New Folder</div>
+                  <div class="ft-dropdown-item" @click="promptNewDir('local')">{{ $t('sftp.newFolder') }}</div>
                 </div>
               </div>
             </div>
@@ -36,10 +36,10 @@
           </div>
           <!-- 快捷目录 -->
           <div class="ft-quick-dirs">
-            <button class="ft-quick-btn" @click="jumpToDir('home')">🏠 Home</button>
-            <button class="ft-quick-btn" @click="jumpToDir('desktop')">🖥 Desktop</button>
-            <button class="ft-quick-btn" @click="jumpToDir('download')">📥 Downloads</button>
-            <button class="ft-quick-btn" @click="jumpToDir('document')">📄 Documents</button>
+            <button class="ft-quick-btn" @click="jumpToDir('home')">{{ $t('sftp.home') }}</button>
+            <button class="ft-quick-btn" @click="jumpToDir('desktop')">{{ $t('sftp.desktop') }}</button>
+            <button class="ft-quick-btn" @click="jumpToDir('download')">{{ $t('sftp.downloads') }}</button>
+            <button class="ft-quick-btn" @click="jumpToDir('document')">{{ $t('sftp.documents') }}</button>
           </div>
           <!-- 文件列表 -->
           <div
@@ -50,10 +50,10 @@
             @drop.prevent="onDrop('local', $event)"
           >
             <div class="ft-list-header">
-              <span class="ft-col-name">Name</span>
-              <span class="ft-col-size">Size</span>
+              <span class="ft-col-name">{{ $t('sftp.name') }}</span>
+              <span class="ft-col-size">{{ $t('sftp.size') }}</span>
             </div>
-            <div v-if="filteredLocalFiles.length === 0" class="ft-empty">Empty</div>
+            <div v-if="filteredLocalFiles.length === 0" class="ft-empty">{{ $t('sftp.empty') }}</div>
             <div
               v-for="f in filteredLocalFiles"
               :key="f.name"
@@ -77,20 +77,20 @@
         <!-- ===== 右侧：远程文件系统 ===== -->
         <div class="ft-column">
           <div class="ft-col-header">
-            <span class="ft-col-title">Remote</span>
+            <span class="ft-col-title">{{ $t('sftp.remote') }}</span>
             <div class="ft-col-actions">
-              <button class="ft-action-btn" @click="refreshRemote" title="Refresh">↻</button>
+              <button class="ft-action-btn" @click="refreshRemote" :title="$t('sftp.refresh')">↻</button>
               <div class="ft-dropdown" ref="remoteDropdownEl">
-                <button class="ft-action-btn" @click="toggleDropdown('remote')">Actions ▾</button>
+                <button class="ft-action-btn" @click="toggleDropdown('remote')">{{ $t('sftp.actions') }} ▾</button>
                 <div v-if="openDropdown === 'remote'" class="ft-dropdown-menu">
-                  <div class="ft-dropdown-item" @click="promptNewDir('remote')">New Folder</div>
+                  <div class="ft-dropdown-item" @click="promptNewDir('remote')">{{ $t('sftp.newFolder') }}</div>
                 </div>
               </div>
             </div>
           </div>
           <!-- 路径面包屑 -->
           <div class="ft-path-bar">
-            <button class="ft-path-up" @click="navUp('remote')" title="Up">↑</button>
+            <button class="ft-path-up" @click="navUp('remote')" :title="$t('sftp.up')">↑</button>
             <input
               class="ft-path-input"
               v-model="remotePath"
@@ -107,10 +107,10 @@
             @drop.prevent="onDrop('remote', $event)"
           >
             <div class="ft-list-header">
-              <span class="ft-col-name">Name</span>
-              <span class="ft-col-size">Size</span>
+              <span class="ft-col-name">{{ $t('sftp.name') }}</span>
+              <span class="ft-col-size">{{ $t('sftp.size') }}</span>
             </div>
-            <div v-if="remoteFiles.length === 0" class="ft-empty">Empty</div>
+            <div v-if="remoteFiles.length === 0" class="ft-empty">{{ $t('sftp.empty') }}</div>
             <div
               v-for="f in remoteFiles"
               :key="f.name"
@@ -139,16 +139,16 @@
         :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
       >
         <template v-if="ctxMenu.side === 'local'">
-          <div class="ctx-item" @click="uploadSelected">⬆ Upload to Remote</div>
+          <div class="ctx-item" @click="uploadSelected">{{ $t('sftp.uploadToRemote') }}</div>
         </template>
         <template v-else>
-          <div class="ctx-item" @click="downloadSelected">⬇ Download to Local</div>
+          <div class="ctx-item" @click="downloadSelected">{{ $t('sftp.downloadToLocal') }}</div>
           <div class="ctx-sep"></div>
-          <div class="ctx-item" @click="promptRename">✎ Rename</div>
-          <div class="ctx-item ctx-danger" @click="deleteRemote">✕ Delete</div>
+          <div class="ctx-item" @click="promptRename">{{ $t('sftp.rename') }}</div>
+          <div class="ctx-item ctx-danger" @click="deleteRemote">{{ $t('sftp.delete') }}</div>
           <div class="ctx-sep"></div>
-          <div class="ctx-item" @click="promptNewDir('remote')">+ New Folder</div>
-          <div class="ctx-item" @click="refreshRemote">↻ Refresh</div>
+          <div class="ctx-item" @click="promptNewDir('remote')">{{ $t('sftp.newFolder') }}</div>
+          <div class="ctx-item" @click="refreshRemote">{{ $t('sftp.refreshList') }}</div>
         </template>
       </div>
 
@@ -171,9 +171,12 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { homeDir, desktopDir, downloadDir, documentDir } from '@tauri-apps/api/path'
+
+const { t } = useI18n({ useScope: 'global' })
 
 interface FileItem { name: string; is_dir: boolean; size: number; modified: string }
 interface ProgressPayload { file_name: string; current: number; total: number; percentage: number; status: string }
@@ -246,7 +249,7 @@ async function loadLocal(dir: string): Promise<void> {
     localPath.value = dir
     statusMsg.value = ''
   } catch (e) {
-    statusMsg.value = 'Local error: ' + e
+    statusMsg.value = t('sftp.localError') + e
     localFiles.value = []
   }
 }
@@ -257,7 +260,7 @@ async function loadRemote(dir: string): Promise<void> {
     remotePath.value = dir
     statusMsg.value = ''
   } catch (e) {
-    statusMsg.value = 'Remote error: ' + e
+    statusMsg.value = t('sftp.remoteError') + e
     remoteFiles.value = []
   }
 }
@@ -321,9 +324,9 @@ async function uploadFile(localFull: string): Promise<void> {
       localPaths: [localFull],
       remoteDir: remotePath.value,
     })
-    statusMsg.value = 'Upload done'
+    statusMsg.value = t('sftp.uploadDone')
   } catch (e) {
-    statusMsg.value = 'Upload failed: ' + e
+    statusMsg.value = t('sftp.uploadFailed') + e
   }
 }
 
@@ -332,9 +335,9 @@ async function downloadFile(remoteFull: string): Promise<void> {
   const localFull = localPath.value.replace(/\/+$/, '') + '/' + name
   try {
     await invoke('sftp_download', { remotePath: remoteFull, localPath: localFull })
-    statusMsg.value = 'Download done'
+    statusMsg.value = t('sftp.downloadDone')
   } catch (e) {
-    statusMsg.value = 'Download failed: ' + e
+    statusMsg.value = t('sftp.downloadFailed') + e
   }
 }
 
@@ -355,48 +358,48 @@ function downloadSelected(): void {
 async function deleteRemote(): Promise<void> {
   if (!selected.remote) return
   const full = remotePath.value.replace(/\/+$/, '') + '/' + selected.remote
-  if (!confirm(`Delete ${full}?`)) return
+  if (!confirm(t('sftp.deleteConfirm', { path: full }))) return
   try {
     await invoke('sftp_delete', { remotePath: full })
-    statusMsg.value = 'Deleted'
+    statusMsg.value = t('sftp.deleted')
     refreshRemote()
-  } catch (e) { statusMsg.value = 'Delete failed: ' + e }
+  } catch (e) { statusMsg.value = t('sftp.deleteFailed') + e }
   closeCtxMenu()
 }
 
 async function promptRename(): Promise<void> {
   if (!selected.remote) return
   const oldName = selected.remote
-  const newName = prompt('New name:', oldName)
+  const newName = prompt(t('sftp.renamePrompt'), oldName)
   if (!newName || newName === oldName) { closeCtxMenu(); return }
   const oldFull = remotePath.value.replace(/\/+$/, '') + '/' + oldName
   const newFull = remotePath.value.replace(/\/+$/, '') + '/' + newName
   try {
     await invoke('sftp_rename', { oldPath: oldFull, newPath: newFull })
-    statusMsg.value = 'Renamed'
+    statusMsg.value = t('sftp.renamed')
     refreshRemote()
-  } catch (e) { statusMsg.value = 'Rename failed: ' + e }
+  } catch (e) { statusMsg.value = t('sftp.renameFailed') + e }
   closeCtxMenu()
 }
 
 async function promptNewDir(side: string): Promise<void> {
   closeDropdown()
-  const dirName = prompt('Folder name:')
+  const dirName = prompt(t('sftp.folderNamePrompt'), '')
   if (!dirName) return
 
   if (side === 'local') {
     // 本地目录：暂无后端 API，提示用系统文件管理器
-    statusMsg.value = 'Local mkdir not supported via SFTP, use system file manager'
+    statusMsg.value = t('sftp.mkdirNotSupported')
     closeCtxMenu()
     return
   } else {
     const full = remotePath.value.replace(/\/+$/, '') + '/' + dirName
     try {
       await invoke('sftp_mkdir', { remotePath: full })
-      statusMsg.value = 'Folder created'
+      statusMsg.value = t('sftp.mkdirDone')
       refreshRemote()
     } catch (e) {
-      statusMsg.value = 'Mkdir failed: ' + e
+      statusMsg.value = t('sftp.mkdirFailed') + e
     }
   }
   closeCtxMenu()
@@ -446,7 +449,7 @@ async function jumpToDir(dirName: string): Promise<void> {
     const dir = await (dirs[dirName] || homeDir)()
     loadLocal(dir)
   } catch (e) {
-    statusMsg.value = 'Failed to resolve directory: ' + e
+    statusMsg.value = t('sftp.resolveDirFailed') + e
   }
 }
 </script>

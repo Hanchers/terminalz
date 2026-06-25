@@ -95,7 +95,7 @@ import { ref, reactive, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { invoke } from '@tauri-apps/api/core'
 
-const { t } = useI18n()
+const { t } = useI18n({ useScope: 'global' })
 
 interface Tag { id: number; name: string; color: string }
 interface FlatOption { id: number; label: string; disabled?: boolean }

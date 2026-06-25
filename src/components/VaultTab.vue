@@ -19,7 +19,7 @@
       <KeychainPanel v-if="activePanel === 'keychain'" />
       <PortForwardPanel v-if="activePanel === 'portforward'" />
       <SnippetsPanel v-if="activePanel === 'snippets'" />
-      <SettingsPanel v-if="activePanel === 'settings'" />
+      <SettingsPanel v-if="activePanel === 'settings'" @change-locale="onChangeLocale" />
     </div>
 
     <!-- Context Menu -->
@@ -66,7 +66,9 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { invoke } from '@tauri-apps/api/core'
+import { saveLocale, type SupportedLocale } from '../i18n'
 import VaultSidebar from './VaultSidebar.vue'
 import HostsPanel from './HostsPanel.vue'
 import KeychainPanel from './KeychainPanel.vue'
@@ -87,6 +89,7 @@ interface GroupDialogState { visible: boolean; editingId: number; name: string; 
 interface TagDialogState { visible: boolean; name: string; color: string }
 
 const emit = defineEmits<{ 'open-host': [c: Record<string, any>]; 'connect-host': [c: Record<string, any>] }>()
+const { locale } = useI18n({ useScope: 'global' })
 
 const activePanel = ref('hosts')
 const groups = ref<Group[]>([])
@@ -151,8 +154,13 @@ function flattenGroups(list: Group[], parentId: number, depth: number): FlatOpti
   return result
 }
 
-// ---- Navigation ----
+// ---- Navigation & Locale ----
 function navigateGroup(id: number) { currentGroup.value = id }
+
+function onChangeLocale(id: string) {
+  locale.value = id
+  saveLocale(id as SupportedLocale)
+}
 
 function onOpenHost(c: Connection) {
   emit('open-host', { ...c, name: c.name || c.host })

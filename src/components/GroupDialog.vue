@@ -26,10 +26,6 @@
 </template>
 
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n'
-
-const { t } = useI18n()
-
 interface FlatOption { id: number; label: string; disabled?: boolean }
 interface GroupDialogState {
   visible: boolean; editingId: number;

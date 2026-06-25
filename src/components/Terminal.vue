@@ -109,7 +109,7 @@ import { listen } from '@tauri-apps/api/event';
 import '@xterm/xterm/css/xterm.css';
 import FileTransfer from './FileTransfer.vue';
 
-const { t } = useI18n();
+const { t } = useI18n({ useScope: 'global' });
 
 interface HostPrefill { id: number; name?: string; host: string; port: number; username: string; password?: string; remark?: string }
 interface Tag { id: number; name: string; color: string }
