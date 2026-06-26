@@ -51,6 +51,13 @@
         </select>
       </div>
       <div class="modal-field">
+        <label>{{ $t('sidebar.hostDialog.autoSnippet') }}</label>
+        <select v-model="form.autoSnippetId">
+          <option :value="0">{{ $t('sidebar.hostDialog.noAutoSnippet') }}</option>
+          <option v-for="s in autoSnippets" :key="s.id" :value="s.id">{{ s.name }}</option>
+        </select>
+      </div>
+      <div class="modal-field">
         <label>{{ $t('sidebar.hostDialog.tags') }}</label>
         <div class="tag-checkboxes">
           <label
@@ -94,21 +101,15 @@
 import { ref, reactive, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { invoke } from '@tauri-apps/api/core'
+import type { Tag, FlatOption, Snippet, HostDialogState } from '../types'
 
 const { t } = useI18n({ useScope: 'global' })
-
-interface Tag { id: number; name: string; color: string }
-interface FlatOption { id: number; label: string; disabled?: boolean }
-interface HostDialogState {
-  visible: boolean; editingId: number;
-  name: string; host: string; port: number; username: string; password: string;
-  groupId: number; tagIds: number[]; remark: string
-}
 
 const props = defineProps<{
   hostDialog: HostDialogState
   allTags: Tag[]
   flatGroupOptions: FlatOption[]
+  autoSnippets?: Snippet[]
 }>()
 
 const emit = defineEmits<{
@@ -128,7 +129,7 @@ const newTag = reactive({ name: '', color: '#3fb950' })
 const form = reactive<HostDialogState>({
   visible: false, editingId: 0,
   name: '', host: '', port: 22, username: '', password: '',
-  groupId: 0, tagIds: [], remark: ''
+  groupId: 0, tagIds: [], remark: '', autoSnippetId: 0
 })
 
 // Sync prop → local form whenever dialog opens or data changes.
@@ -144,6 +145,7 @@ watch(() => props.hostDialog, (val) => {
     groupId: val.groupId,
     tagIds: [...val.tagIds],
     remark: val.remark,
+    autoSnippetId: val.autoSnippetId,
   })
 }, { immediate: true, deep: true })
 
@@ -166,7 +168,7 @@ async function saveQuickTag(): Promise<void> {
     newTag.name = ''
     showQuickTag.value = false
     emit('saved')
-  } catch (e) { alert(t('sidebar.error.failed') + e) }
+  } catch (e) { testError.value = t('sidebar.error.failed') + e }
 }
 </script>
 

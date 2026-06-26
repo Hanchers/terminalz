@@ -62,10 +62,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-
-interface Group { id: number; parent_id: number; name: string; remark: string }
-interface Connection { id: number; name: string; host: string; port: number; username: string; password: string; group_id: number; remark: string }
-interface Tag { id: number; name: string; color: string }
+import type { Group, Connection, Tag } from '../types'
 
 const props = defineProps<{
   groups: Group[]

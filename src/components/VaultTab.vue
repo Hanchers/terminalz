@@ -18,7 +18,7 @@
       />
       <KeychainPanel v-if="activePanel === 'keychain'" />
       <PortForwardPanel v-if="activePanel === 'portforward'" />
-      <SnippetsPanel v-if="activePanel === 'snippets'" />
+      <SnippetsPanel v-if="activePanel === 'snippets'" @send-command="onSendCommand" />
       <SettingsPanel v-if="activePanel === 'settings'" @change-locale="onChangeLocale" />
     </div>
 
@@ -39,16 +39,17 @@
     </div>
 
     <!-- Dialogs -->
-    <HostDialog
-      ref="hostDialogRef"
-      :host-dialog="hostDialog"
-      :all-tags="allTags"
-      :flat-group-options="flatGroupOptions"
-      @save="saveHostDialog"
-      @save-connect="saveConnectHost"
-      @cancel="closeHostDialog"
-      @saved="loadAll"
-    />
+      <HostDialog
+        ref="hostDialogRef"
+        :host-dialog="hostDialog"
+        :all-tags="allTags"
+        :flat-group-options="flatGroupOptions"
+        :auto-snippets="autoSnippets"
+        @save="saveHostDialog"
+        @save-connect="saveConnectHost"
+        @cancel="closeHostDialog"
+        @saved="loadAll"
+      />
     <GroupDialog
       :group-dialog="groupDialog"
       :group-select-options="groupSelectOptions"
@@ -69,6 +70,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { invoke } from '@tauri-apps/api/core'
 import { saveLocale, type SupportedLocale } from '../i18n'
+import type { Connection, Group, Tag, Snippet, FlatOption, HostDialogState } from '../types'
 import VaultSidebar from './VaultSidebar.vue'
 import HostsPanel from './HostsPanel.vue'
 import KeychainPanel from './KeychainPanel.vue'
@@ -79,22 +81,18 @@ import HostDialog from './HostDialog.vue'
 import GroupDialog from './GroupDialog.vue'
 import TagDialog from './TagDialog.vue'
 
-interface Group { id: number; parent_id: number; name: string; remark: string }
-interface Connection { id: number; name: string; host: string; port: number; username: string; password: string; group_id: number; remark: string }
-interface Tag { id: number; name: string; color: string }
-interface FlatOption { id: number; label: string; disabled?: boolean }
 interface CtxMenu { visible: boolean; x: number; y: number; type: string; id: number }
-interface HostDialogState { visible: boolean; editingId: number; name: string; host: string; port: number; username: string; password: string; groupId: number; tagIds: number[]; remark: string }
 interface GroupDialogState { visible: boolean; editingId: number; name: string; parentId: number; remark: string }
 interface TagDialogState { visible: boolean; name: string; color: string }
 
-const emit = defineEmits<{ 'open-host': [c: Record<string, any>]; 'connect-host': [c: Record<string, any>] }>()
+const emit = defineEmits<{ 'open-host': [c: Record<string, any>]; 'connect-host': [c: Record<string, any>]; 'send-command': [command: string] }>()
 const { locale } = useI18n({ useScope: 'global' })
 
 const activePanel = ref('hosts')
 const groups = ref<Group[]>([])
 const connections = ref<Connection[]>([])
 const allTags = ref<Tag[]>([])
+const autoSnippets = ref<Snippet[]>([])
 const hostTagsMap = ref<Record<number, Tag[]>>({})
 const currentGroup = ref(0)
 const ctxMenu = reactive<CtxMenu>({ visible: false, x: 0, y: 0, type: '', id: 0 })
@@ -126,7 +124,7 @@ const filteredConnections = computed(() => {
 })
 
 // ---- Dialogs ----
-const hostDialog = reactive<HostDialogState>({ visible: false, editingId: 0, name: '', host: '', port: 22, username: '', password: '', groupId: 0, tagIds: [], remark: '' })
+const hostDialog = reactive<HostDialogState>({ visible: false, editingId: 0, name: '', host: '', port: 22, username: '', password: '', groupId: 0, tagIds: [], remark: '', autoSnippetId: 0 })
 const hostDialogRef = ref<InstanceType<typeof HostDialog> | null>(null)
 const groupDialog = reactive<GroupDialogState>({ visible: false, editingId: 0, name: '', parentId: 0, remark: '' })
 const tagDialog = reactive<TagDialogState>({ visible: false, name: '', color: '#3fb950' })
@@ -162,6 +160,10 @@ function onChangeLocale(id: string) {
   saveLocale(id as SupportedLocale)
 }
 
+function onSendCommand(command: string) {
+  emit('send-command', command)
+}
+
 function onOpenHost(c: Connection) {
   emit('open-host', { ...c, name: c.name || c.host })
 }
@@ -174,7 +176,7 @@ window.addEventListener('click', () => { ctxMenu.visible = false })
 // ---- Host CRUD ----
 function openHostDialog(groupId = 0) {
   ctxMenu.visible = false
-  Object.assign(hostDialog, { visible: true, editingId: 0, tagIds: [], name: '', host: '', port: 22, username: '', password: '', groupId, remark: '' })
+  Object.assign(hostDialog, { visible: true, editingId: 0, tagIds: [], name: '', host: '', port: 22, username: '', password: '', groupId, remark: '', autoSnippetId: 0 })
 }
 async function editHost(id: number) {
   ctxMenu.visible = false
@@ -182,12 +184,12 @@ async function editHost(id: number) {
   if (!c) return
   let tagIds: number[] = []
   try { const tags = await invoke<Tag[]>('get_host_tags', { hostId: id }); tagIds = tags.map(t => t.id) } catch (_) {}
-  Object.assign(hostDialog, { visible: true, editingId: c.id, tagIds, name: c.name || '', host: c.host, port: c.port || 22, username: c.username, password: '', groupId: c.group_id || 0, remark: c.remark || '' })
+  Object.assign(hostDialog, { visible: true, editingId: c.id, tagIds, name: c.name || '', host: c.host, port: c.port || 22, username: c.username, password: '', groupId: c.group_id || 0, remark: c.remark || '', autoSnippetId: c.auto_snippet_id || 0 })
 }
 async function saveHostDialog(form: HostDialogState) {
   if (!form.host || !form.username) return
   try {
-    const saved = await invoke<{ id: number }>('save_connection', { config: { id: form.editingId, name: form.name || `${form.username}@${form.host}`, host: form.host, port: form.port, username: form.username, password: form.password, group_id: form.groupId, remark: form.remark } })
+    const saved = await invoke<{ id: number }>('save_connection', { config: { id: form.editingId, name: form.name || `${form.username}@${form.host}`, host: form.host, port: form.port, username: form.username, password: form.password, group_id: form.groupId, remark: form.remark, auto_snippet_id: form.autoSnippetId } })
     await invoke('set_host_tags', { hostId: saved.id, tagIds: form.tagIds }).catch(() => {})
     closeHostDialog()
     await loadAll()
@@ -197,7 +199,7 @@ async function saveConnectHost(form: HostDialogState) {
   if (!form.host || !form.username) return
   hostDialogRef.value?.setConnecting(true)
   try {
-    const saved = await invoke<{ id: number }>('save_connection', { config: { id: form.editingId, name: form.name || `${form.username}@${form.host}`, host: form.host, port: form.port, username: form.username, password: form.password, group_id: form.groupId, remark: form.remark } })
+    const saved = await invoke<{ id: number }>('save_connection', { config: { id: form.editingId, name: form.name || `${form.username}@${form.host}`, host: form.host, port: form.port, username: form.username, password: form.password, group_id: form.groupId, remark: form.remark, auto_snippet_id: form.autoSnippetId } })
     await invoke('set_host_tags', { hostId: saved.id, tagIds: form.tagIds }).catch(() => {})
     closeHostDialog()
     await loadAll()
@@ -231,12 +233,13 @@ function closeTagDialog() { tagDialog.visible = false }
 
 // ---- Data load ----
 async function loadAll() {
-  const [conns, grps, tags] = await Promise.all([
+  const [conns, grps, tags, snips] = await Promise.all([
     invoke<Connection[]>('list_connections').catch(() => [] as Connection[]),
     invoke<Group[]>('list_groups').catch(() => [] as Group[]),
     invoke<Tag[]>('list_tags').catch(() => [] as Tag[]),
+    invoke<Snippet[]>('list_snippets').catch(() => [] as Snippet[]),
   ])
-  connections.value = conns; groups.value = grps; allTags.value = tags
+  connections.value = conns; groups.value = grps; allTags.value = tags; autoSnippets.value = snips
   try {
     const ids = conns.map(c => c.id)
     if (ids.length > 0) {

@@ -17,6 +17,7 @@
           @open-host="openHostTab"
           @connect-host="connectHost"
           @new-tab="newEmptyTab"
+          @send-command="sendCommand"
         />
 
         <!-- SFTP Tab -->
@@ -44,6 +45,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
 import TabBar from './components/TabBar.vue'
 import VaultTab from './components/VaultTab.vue'
 import SftpTab from './components/SftpTab.vue'
@@ -87,6 +89,14 @@ function connectHost(config: HostConfig) {
   tab.connecting = false // reset for re-connect
   activeTab.value = tab.id
   activeTerminalId.value = tab.id
+}
+
+async function sendCommand(command: string) {
+  try {
+    await invoke('ssh_write', { data: command + '\n' })
+  } catch (e) {
+    console.error('Failed to send command:', e)
+  }
 }
 
 function newEmptyTab() {

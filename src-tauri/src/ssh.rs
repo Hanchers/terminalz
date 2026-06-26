@@ -356,7 +356,22 @@ pub(crate) async fn ssh_connect(
         cols,
     )
     .await
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+
+    // Auto-execute snippet if configured (shell needs ~800ms to initialize)
+    if config.auto_snippet_id > 0 {
+        match db.get_snippet_content(config.auto_snippet_id) {
+            Ok(content) if !content.is_empty() => {
+                tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+                let _ = write(&state, content.as_bytes()).await;
+                let _ = write(&state, b"\n").await;
+            }
+            Ok(_) => {}
+            Err(e) => warn!("Failed to load auto-snippet {}: {}", config.auto_snippet_id, e),
+        }
+    }
+
+    Ok(())
 }
 
 #[tauri::command]

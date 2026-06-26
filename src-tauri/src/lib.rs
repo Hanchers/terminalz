@@ -84,6 +84,20 @@ pub fn run() {
             db::get_host_tags,
             db::list_all_host_tags,
             db::set_host_tags,
+            // DB — keychain
+            db::list_ssh_keys,
+            db::save_ssh_key,
+            db::delete_ssh_key,
+            // DB — port forward
+            db::list_port_forwards,
+            db::save_port_forward,
+            db::delete_port_forward,
+            // DB — snippets
+            db::list_snippets,
+            db::save_snippet,
+            db::delete_snippet,
+            // DB — helpers
+            db::list_connections_compact,
         ])
         .run(tauri::generate_context!())
         .expect("启动 Tauri 应用失败");

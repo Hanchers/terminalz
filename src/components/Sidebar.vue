@@ -149,6 +149,7 @@ import { useI18n } from 'vue-i18n'
 import { invoke } from '@tauri-apps/api/core'
 import { currentTheme, themes, setTheme } from '../themes/index'
 import { locales, saveLocale, type SupportedLocale } from '../i18n'
+import type { HostDialogState } from '../types'
 import TreeNode from './TreeNode.vue'
 import HostDialog from './HostDialog.vue'
 import GroupDialog from './GroupDialog.vue'
@@ -161,7 +162,6 @@ interface Connection { id: number; name: string; host: string; port: number; use
 interface Tag { id: number; name: string; color: string }
 interface FlatOption { id: number; label: string; disabled?: boolean }
 interface CtxMenu { visible: boolean; x: number; y: number; type: string; id: number }
-interface HostDialogState { visible: boolean; editingId: number; name: string; host: string; port: number; username: string; password: string; groupId: number; tagIds: number[]; remark: string }
 interface GroupDialog { visible: boolean; editingId: number; name: string; parentId: number; remark: string }
 interface TagDialog { visible: boolean; name: string; color: string }
 
@@ -189,7 +189,7 @@ const ctxMenu = reactive<CtxMenu>({ visible: false, x: 0, y: 0, type: '', id: 0 
 
 const hostDialog = reactive<HostDialogState>({
   visible: false, editingId: 0,
-  name: '', host: '', port: 22, username: '', password: '', groupId: 0, tagIds: [], remark: ''
+  name: '', host: '', port: 22, username: '', password: '', groupId: 0, tagIds: [], remark: '', autoSnippetId: 0
 })
 const hostDialogRef = ref<InstanceType<typeof HostDialog> | null>(null)
 const groupDialog = reactive<GroupDialog>({

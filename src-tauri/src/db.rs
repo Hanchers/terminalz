@@ -3,7 +3,7 @@ use rusqlite::Connection;
 use std::path::Path;
 use std::sync::Mutex;
 
-use crate::models::{ConnectionConfig, HostGroup, Tag};
+use crate::models::{ConnectionConfig, HostGroup, Tag, SshKey, PortForward, Snippet};
 
 // ---- 数据库状态 ----
 
@@ -37,7 +37,7 @@ impl DbState {
     pub fn list_all(&self) -> Result<Vec<ConnectionConfig>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
-            .prepare("SELECT id, name, host, port, username, password, group_id, remark FROM connections ORDER BY updated_at DESC")?;
+            .prepare("SELECT id, name, host, port, username, password, group_id, remark, auto_snippet_id FROM connections ORDER BY updated_at DESC")?;
         let rows = stmt.query_map([], |row| {
             let raw: String = row.get(5)?;
             Ok(ConnectionConfig {
@@ -53,6 +53,7 @@ impl DbState {
                 },
                 group_id: row.get(6)?,
                 remark: row.get(7)?,
+                auto_snippet_id: row.get(8)?,
             })
         })?;
         let mut list = Vec::new();
@@ -77,7 +78,7 @@ impl DbState {
     pub fn get_connection_internal(&self, id: i64) -> Result<ConnectionConfig> {
         let conn = self.conn.lock().unwrap();
         conn.query_row(
-            "SELECT id, name, host, port, username, password, group_id, remark FROM connections WHERE id = ?",
+            "SELECT id, name, host, port, username, password, group_id, remark, auto_snippet_id FROM connections WHERE id = ?",
             [id],
             |row| {
                 Ok(ConnectionConfig {
@@ -89,6 +90,7 @@ impl DbState {
                     password: row.get(5)?,
                     group_id: row.get(6)?,
                     remark: row.get(7)?,
+                    auto_snippet_id: row.get(8)?,
                 })
             },
         ).map_err(|e| e.into())
@@ -108,14 +110,14 @@ impl DbState {
         let conn = self.conn.lock().unwrap();
         if config.id > 0 {
             conn.execute(
-                "UPDATE connections SET name=?, host=?, port=?, username=?, password=?, group_id=?, remark=?, updated_at=datetime('now') WHERE id=?",
-                rusqlite::params![config.name, config.host, config.port as i64, config.username, config.password, config.group_id, config.remark, config.id],
+                "UPDATE connections SET name=?, host=?, port=?, username=?, password=?, group_id=?, remark=?, auto_snippet_id=?, updated_at=datetime('now') WHERE id=?",
+                rusqlite::params![config.name, config.host, config.port as i64, config.username, config.password, config.group_id, config.remark, config.auto_snippet_id, config.id],
             )?;
             Ok(config.id)
         } else {
             conn.execute(
-                "INSERT INTO connections (name, host, port, username, password, group_id, remark) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                rusqlite::params![config.name, config.host, config.port as i64, config.username, config.password, config.group_id, config.remark],
+                "INSERT INTO connections (name, host, port, username, password, group_id, remark, auto_snippet_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                rusqlite::params![config.name, config.host, config.port as i64, config.username, config.password, config.group_id, config.remark, config.auto_snippet_id],
             )?;
             Ok(conn.last_insert_rowid())
         }
@@ -316,6 +318,189 @@ impl DbState {
         }
         Ok(())
     }
+
+    // ---- Keychain CRUD ----
+
+    pub fn list_ssh_keys(&self) -> Result<Vec<SshKey>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, key_type, username, password, private_key, host, remark FROM ssh_keys ORDER BY updated_at DESC"
+        )?;
+        let rows = stmt.query_map([], |row| {
+            let pw: String = row.get(4)?;
+            let pk: String = row.get(5)?;
+            Ok(SshKey {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                key_type: row.get(2)?,
+                username: row.get(3)?,
+                password: if pw.is_empty() { String::new() } else { "••••••••".to_string() },
+                private_key: if pk.is_empty() { String::new() } else { "••••••••".to_string() },
+                host: row.get(6)?,
+                remark: row.get(7)?,
+            })
+        })?;
+        let mut list = Vec::new();
+        for row in rows { list.push(row?); }
+        Ok(list)
+    }
+
+    pub fn save_ssh_key(&self, key: &SshKey) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        if key.id > 0 {
+            conn.execute(
+                "UPDATE ssh_keys SET name=?, key_type=?, username=?, password=?, private_key=?, host=?, remark=?, updated_at=datetime('now') WHERE id=?",
+                rusqlite::params![key.name, key.key_type, key.username, key.password, key.private_key, key.host, key.remark, key.id],
+            )?;
+            Ok(key.id)
+        } else {
+            conn.execute(
+                "INSERT INTO ssh_keys (name, key_type, username, password, private_key, host, remark) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                rusqlite::params![key.name, key.key_type, key.username, key.password, key.private_key, key.host, key.remark],
+            )?;
+            Ok(conn.last_insert_rowid())
+        }
+    }
+
+    /// Get raw ssh_key password/private_key values for internal use.
+    pub fn get_ssh_key_internal(&self, id: i64) -> Result<SshKey> {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row(
+            "SELECT id, name, key_type, username, password, private_key, host, remark FROM ssh_keys WHERE id = ?",
+            [id],
+            |row| Ok(SshKey {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                key_type: row.get(2)?,
+                username: row.get(3)?,
+                password: row.get(4)?,
+                private_key: row.get(5)?,
+                host: row.get(6)?,
+                remark: row.get(7)?,
+            }),
+        ).map_err(|e| e.into())
+    }
+
+    pub fn delete_ssh_key(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM ssh_keys WHERE id=?", [id])?;
+        Ok(())
+    }
+
+    // ---- Port Forward CRUD ----
+
+    pub fn list_port_forwards(&self) -> Result<Vec<PortForward>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, connection_id, local_port, remote_host, remote_port, direction, enabled, remark FROM port_forwards ORDER BY updated_at DESC"
+        )?;
+        let rows = stmt.query_map([], |row| {
+            let enabled_int: i64 = row.get(7)?;
+            Ok(PortForward {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                connection_id: row.get(2)?,
+                local_port: row.get::<_, i64>(3)? as u16,
+                remote_host: row.get(4)?,
+                remote_port: row.get::<_, i64>(5)? as u16,
+                direction: row.get(6)?,
+                enabled: enabled_int != 0,
+                remark: row.get(8)?,
+            })
+        })?;
+        let mut list = Vec::new();
+        for row in rows { list.push(row?); }
+        Ok(list)
+    }
+
+    pub fn save_port_forward(&self, pf: &PortForward) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        if pf.id > 0 {
+            conn.execute(
+                "UPDATE port_forwards SET name=?, connection_id=?, local_port=?, remote_host=?, remote_port=?, direction=?, enabled=?, remark=?, updated_at=datetime('now') WHERE id=?",
+                rusqlite::params![pf.name, pf.connection_id, pf.local_port as i64, pf.remote_host, pf.remote_port as i64, pf.direction, pf.enabled as i64, pf.remark, pf.id],
+            )?;
+            Ok(pf.id)
+        } else {
+            conn.execute(
+                "INSERT INTO port_forwards (name, connection_id, local_port, remote_host, remote_port, direction, enabled, remark) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                rusqlite::params![pf.name, pf.connection_id, pf.local_port as i64, pf.remote_host, pf.remote_port as i64, pf.direction, pf.enabled as i64, pf.remark],
+            )?;
+            Ok(conn.last_insert_rowid())
+        }
+    }
+
+    pub fn delete_port_forward(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM port_forwards WHERE id=?", [id])?;
+        Ok(())
+    }
+
+    // ---- Snippet CRUD ----
+
+    pub fn list_snippets(&self) -> Result<Vec<Snippet>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, content, language, is_favorite, remark FROM snippets ORDER BY is_favorite DESC, updated_at DESC"
+        )?;
+        let rows = stmt.query_map([], |row| {
+            let fav_int: i64 = row.get(4)?;
+            Ok(Snippet {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                content: row.get(2)?,
+                language: row.get(3)?,
+                is_favorite: fav_int != 0,
+                remark: row.get(5)?,
+            })
+        })?;
+        let mut list = Vec::new();
+        for row in rows { list.push(row?); }
+        Ok(list)
+    }
+
+    pub fn save_snippet(&self, snippet: &Snippet) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        if snippet.id > 0 {
+            conn.execute(
+                "UPDATE snippets SET name=?, content=?, language=?, is_favorite=?, remark=?, updated_at=datetime('now') WHERE id=?",
+                rusqlite::params![snippet.name, snippet.content, snippet.language, snippet.is_favorite as i64, snippet.remark, snippet.id],
+            )?;
+            Ok(snippet.id)
+        } else {
+            conn.execute(
+                "INSERT INTO snippets (name, content, language, is_favorite, remark) VALUES (?, ?, ?, ?, ?)",
+                rusqlite::params![snippet.name, snippet.content, snippet.language, snippet.is_favorite as i64, snippet.remark],
+            )?;
+            Ok(conn.last_insert_rowid())
+        }
+    }
+
+    pub fn delete_snippet(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM snippets WHERE id=?", [id])?;
+        Ok(())
+    }
+
+    /// Load snippet content by id (for auto-execute on connect).
+    pub fn get_snippet_content(&self, id: i64) -> Result<String> {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row(
+            "SELECT content FROM snippets WHERE id = ?",
+            [id],
+            |row| row.get(0),
+        ).map_err(|e| e.into())
+    }
+
+    /// List all connections as (id, name) pairs for use in port-forward selection.
+    pub fn list_connections_compact(&self) -> Result<Vec<(i64, String)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT id, name FROM connections ORDER BY name")?;
+        let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        let mut list = Vec::new();
+        for row in rows { list.push(row?); }
+        Ok(list)
+    }
 }
 
 // ---- Tauri commands ----
@@ -463,4 +648,99 @@ pub(crate) fn set_host_tags(
     tag_ids: Vec<i64>,
 ) -> Result<(), String> {
     db.set_host_tags(host_id, &tag_ids).map_err(|e| e.to_string())
+}
+
+// ---- Keychain commands ----
+
+#[tauri::command]
+pub(crate) fn list_ssh_keys(db: tauri::State<'_, DbState>) -> Result<Vec<SshKey>, String> {
+    db.list_ssh_keys().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub(crate) fn save_ssh_key(
+    db: tauri::State<'_, DbState>,
+    vault: tauri::State<'_, crate::vault::Vault>,
+    key: SshKey,
+) -> Result<SshKey, String> {
+    let mut k = key.clone();
+    // If editing and password/private_key is empty, keep existing values
+    if k.id > 0 {
+        let old = db.get_ssh_key_internal(k.id).map_err(|e| e.to_string())?;
+        if k.password.is_empty() { k.password = old.password; }
+        if k.private_key.is_empty() { k.private_key = old.private_key; }
+    }
+    // Encrypt password / private_key if newly provided
+    if !k.password.is_empty() && !k.password.starts_with("__AES__:") {
+        let encrypted = vault.encrypt_aes(&k.password).map_err(|e| format!("encrypt: {}", e))?;
+        k.password = format!("__AES__:{}", encrypted);
+    }
+    if !k.private_key.is_empty() && !k.private_key.starts_with("__AES__:") {
+        let encrypted = vault.encrypt_aes(&k.private_key).map_err(|e| format!("encrypt: {}", e))?;
+        k.private_key = format!("__AES__:{}", encrypted);
+    }
+    let new_id = db.save_ssh_key(&k).map_err(|e| e.to_string())?;
+    // Return masked version
+    Ok(SshKey {
+        id: new_id,
+        password: if key.password.is_empty() { String::new() } else { "••••••••".to_string() },
+        private_key: if key.private_key.is_empty() { String::new() } else { "••••••••".to_string() },
+        ..key
+    })
+}
+
+#[tauri::command]
+pub(crate) fn delete_ssh_key(db: tauri::State<'_, DbState>, id: i64) -> Result<(), String> {
+    db.delete_ssh_key(id).map_err(|e| e.to_string())
+}
+
+// ---- Port Forward commands ----
+
+#[tauri::command]
+pub(crate) fn list_port_forwards(db: tauri::State<'_, DbState>) -> Result<Vec<PortForward>, String> {
+    db.list_port_forwards().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub(crate) fn save_port_forward(
+    db: tauri::State<'_, DbState>,
+    config: PortForward,
+) -> Result<PortForward, String> {
+    let new_id = db.save_port_forward(&config).map_err(|e| e.to_string())?;
+    Ok(PortForward { id: new_id, ..config })
+}
+
+#[tauri::command]
+pub(crate) fn delete_port_forward(db: tauri::State<'_, DbState>, id: i64) -> Result<(), String> {
+    db.delete_port_forward(id).map_err(|e| e.to_string())
+}
+
+// ---- Snippet commands ----
+
+#[tauri::command]
+pub(crate) fn list_snippets(db: tauri::State<'_, DbState>) -> Result<Vec<Snippet>, String> {
+    db.list_snippets().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub(crate) fn save_snippet(
+    db: tauri::State<'_, DbState>,
+    snippet: Snippet,
+) -> Result<Snippet, String> {
+    let new_id = db.save_snippet(&snippet).map_err(|e| e.to_string())?;
+    Ok(Snippet { id: new_id, ..snippet })
+}
+
+#[tauri::command]
+pub(crate) fn delete_snippet(db: tauri::State<'_, DbState>, id: i64) -> Result<(), String> {
+    db.delete_snippet(id).map_err(|e| e.to_string())
+}
+
+// ---- Connection list helper (compact) ----
+
+#[tauri::command]
+pub(crate) fn list_connections_compact(
+    db: tauri::State<'_, DbState>,
+) -> Result<Vec<(i64, String)>, String> {
+    db.list_connections_compact().map_err(|e| e.to_string())
 }

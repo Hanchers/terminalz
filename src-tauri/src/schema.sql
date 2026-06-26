@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS connections (
     password    TEXT NOT NULL DEFAULT '',            -- login password
     group_id    INTEGER NOT NULL DEFAULT 0,          -- FK -> host_groups.id
     remark      TEXT NOT NULL DEFAULT '',            -- user notes
+    auto_snippet_id INTEGER NOT NULL DEFAULT 0,      -- FK -> snippets.id (0=off)
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -43,4 +44,45 @@ CREATE TABLE IF NOT EXISTS host_tags (
     PRIMARY KEY (host_id, tag_id),
     FOREIGN KEY (host_id) REFERENCES connections(id) ON DELETE CASCADE,
     FOREIGN KEY (tag_id)  REFERENCES tags(id)        ON DELETE CASCADE
+);
+
+-- SSH keychain entries
+CREATE TABLE IF NOT EXISTS ssh_keys (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    name            TEXT NOT NULL,
+    key_type        TEXT NOT NULL DEFAULT 'password',   -- 'password' | 'private_key'
+    username        TEXT NOT NULL DEFAULT '',
+    password        TEXT NOT NULL DEFAULT '',           -- encrypted password or passphrase
+    private_key     TEXT NOT NULL DEFAULT '',           -- encrypted private key content
+    host            TEXT NOT NULL DEFAULT '',           -- optional target host filter
+    remark          TEXT NOT NULL DEFAULT '',
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Port forward rules
+CREATE TABLE IF NOT EXISTS port_forwards (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    name            TEXT NOT NULL,
+    connection_id   INTEGER NOT NULL DEFAULT 0,        -- FK -> connections.id (0=manual)
+    local_port      INTEGER NOT NULL,
+    remote_host     TEXT NOT NULL DEFAULT 'localhost',
+    remote_port     INTEGER NOT NULL,
+    direction       TEXT NOT NULL DEFAULT 'local',      -- 'local' | 'remote'
+    enabled         INTEGER NOT NULL DEFAULT 0,         -- 0=stopped, 1=running
+    remark          TEXT NOT NULL DEFAULT '',
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Code snippets
+CREATE TABLE IF NOT EXISTS snippets (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    name            TEXT NOT NULL,
+    content         TEXT NOT NULL,
+    language        TEXT NOT NULL DEFAULT 'shell',
+    is_favorite     INTEGER NOT NULL DEFAULT 0,
+    remark          TEXT NOT NULL DEFAULT '',
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
