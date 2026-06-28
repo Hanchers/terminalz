@@ -43,6 +43,9 @@ export default {
       connecting: 'Connecting...',
       autoSnippet: 'Auto-Run Snippet',
       noAutoSnippet: '(None)',
+      keychain: 'Link Keychain',
+      noKeychain: '(No Keychain)',
+      passwordFromKeychain: 'Password provided by keychain on connect',
       save: 'Save',
       cancel: 'Cancel',
     },
@@ -109,6 +112,7 @@ export default {
       maxAttemptsSsh: 'SSH connection failed after {n} attempts, check network and config',
       saveFailed: 'Save failed: ',
       saved: 'Saved ✓',
+      connectingSlow: 'Connection is taking longer than expected — checking firewall, network, or remote host status...',
     },
   },
   status: {

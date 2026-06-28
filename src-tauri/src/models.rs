@@ -12,6 +12,7 @@ pub struct ConnectionConfig {
     pub group_id: i64,
     pub remark: String,
     pub auto_snippet_id: i64,
+    pub keychain_id: i64,
 }
 
 /// 主机分组

@@ -10,6 +10,7 @@ export interface Connection {
   group_id: number
   remark: string
   auto_snippet_id: number
+  keychain_id: number
 }
 
 export interface Group {
@@ -75,4 +76,5 @@ export interface HostDialogState {
   tagIds: number[]
   remark: string
   autoSnippetId: number
+  keychainId: number
 }

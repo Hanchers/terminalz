@@ -55,39 +55,24 @@
       </div>
     </div>
 
-    <!-- 连接表单覆盖层 -->
+    <!-- 连接进度（双击 host 直接建立连接） -->
     <div v-if="!connected && prefill && mode !== 'local'" class="connect-overlay">
-      <div class="connect-form">
-        <h2>{{ $t('terminal.form.title') }}</h2>
-        <div class="form-group">
-          <input v-model="name" :placeholder="$t('terminal.form.namePlaceholder')" readonly class="input-readonly" />
-        </div>
-        <div class="form-group">
-          <input v-model="host" :placeholder="$t('terminal.form.hostPlaceholder')" readonly class="input-readonly" />
-          <input v-model.number="port" :placeholder="$t('terminal.form.portPlaceholder')" type="number" readonly class="input-readonly" style="max-width:100px" />
-        </div>
-        <div class="form-group">
-          <label class="form-label">{{ $t('terminal.form.remark') }}</label>
-          <div class="input-readonly remark-field">{{ remark || '-' }}</div>
-        </div>
-        <div class="form-group">
-          <label class="form-label">{{ $t('terminal.form.tags') }}</label>
-          <div class="tag-list">
-            <span v-if="tags.length === 0" class="tag-none">-</span>
-            <span
-              v-for="t in tags"
-              :key="t.id"
-              class="tag-badge"
-              :style="{ background: t.color }"
-            >{{ t.name }}</span>
+      <div class="connect-form" style="text-align:center;max-width:380px">
+        <h3>{{ prefill.name || prefill.host }}</h3>
+        <p class="connect-sub">{{ prefill.username }}@{{ prefill.host }}:{{ prefill.port }}</p>
+        <div class="connect-log">
+          <div v-if="connecting && statusLog.length === 0" class="log-line">
+            <span class="log-dot"></span>
+            <span class="log-msg">{{ $t('terminal.form.connecting') }}…</span>
+          </div>
+          <div v-for="(s, i) in statusLog" :key="i" class="log-line">
+            <span class="log-dot" :class="{ 'dot-ok': s.step === 'done', 'dot-err': s.step === 'err' }"></span>
+            <span class="log-msg" :class="{ 'log-ok': s.step === 'done', 'log-err': s.step === 'err' }">{{ s.detail }}</span>
           </div>
         </div>
-        <div class="btn-row">
-          <button class="btn-connect" @click="doConnect" :disabled="connecting">
-            {{ connecting ? $t('terminal.form.connecting') : $t('terminal.form.connect') }}
-          </button>
-        </div>
-        <p v-if="error" class="error">{{ error }}</p>
+        <p v-if="!connecting && error" class="error" style="margin-top:12px">{{ error }}</p>
+        <button v-if="!connecting && error" class="btn-connect" style="margin-top:8px" @click="doConnect">{{ $t('terminal.form.connect') }}</button>
+        <p v-if="connecting && showTimeoutTip" class="timeout-tip">{{ $t('terminal.error.connectingSlow') }}</p>
       </div>
     </div>
 
@@ -100,7 +85,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue';
+import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -114,7 +99,7 @@ const { t } = useI18n({ useScope: 'global' });
 interface HostPrefill { id: number; name?: string; host: string; port: number; username: string; password?: string; remark?: string }
 interface Tag { id: number; name: string; color: string }
 
-const props = defineProps<{ prefill: HostPrefill | null; mode: 'ssh' | 'local' | null; autoConnect: number }>()
+const props = defineProps<{ prefill: HostPrefill | null; mode: 'ssh' | 'local' | null }>()
 const emit = defineEmits<{ 'connection-change': [connected: boolean] }>()
 
 const connected = ref(false);
@@ -131,6 +116,10 @@ const remark = ref('');
 const tags = ref<Tag[]>([]);
 const termContainer = ref<HTMLDivElement | null>(null);
 const showFileTransfer = ref(false);
+const statusLog = ref<{ step: string; detail: string }[]>([]);
+const showTimeoutTip = ref(false);
+let connectTimeout: ReturnType<typeof setTimeout> | null = null;
+let autoConnectTriggered = false;
 
 let term: Terminal | null = null;
 let fitAddon: FitAddon | null = null;
@@ -138,17 +127,9 @@ let unlisten: (() => void) | null = null;
 
 // ---- 外部 prefill ---
 
-// Auto-connect when triggered by "Save & Connect".
-// Use props.prefill directly to avoid race with the prefill watcher that
-// sets connectionId (prefill and autoConnect may update in the same tick).
-watch(() => props.autoConnect, (n) => {
-  if (n > 0 && props.mode === 'ssh' && props.prefill?.id && !connected.value) {
-    connectionId.value = props.prefill.id
-    doConnect()
-  }
-})
-
+// When prefill is set (double-click or Save & Connect), auto-connect
 watch(() => props.prefill, async (val: HostPrefill | null) => {
+  console.log('[Terminal] prefill watcher:', val, 'mode:', props.mode, 'connected:', connected.value, 'connecting:', connecting.value);
   if (val) {
     connectionId.value = val.id || 0;
     name.value = val.name || '';
@@ -157,7 +138,13 @@ watch(() => props.prefill, async (val: HostPrefill | null) => {
     username.value = val.username || '';
     remark.value = val.remark || '';
     error.value = '';
-    // load tags for this host
+    // Auto-connect immediately, don't wait for tag loading
+    if (!autoConnectTriggered && props.mode === 'ssh' && val.id && val.host && val.username && !connected.value && !connecting.value) {
+      console.log('[Terminal] Triggering doConnect for', val.host);
+      autoConnectTriggered = true;
+      doConnect()
+    }
+    // load tags in background
     if (val.id) {
       try { tags.value = await invoke<Tag[]>('get_host_tags', { hostId: val.id }) } catch (_) { tags.value = [] }
     } else {
@@ -166,7 +153,15 @@ watch(() => props.prefill, async (val: HostPrefill | null) => {
   }
 }, { deep: true })
 
-onMounted(() => {});
+onMounted(() => {
+  // If prefill is already available on mount, trigger auto-connect
+  if (!autoConnectTriggered && props.prefill && props.mode === 'ssh' && props.prefill.id && props.prefill.host && props.prefill.username && !connected.value && !connecting.value) {
+    console.log('[Terminal] onMounted: triggering doConnect for', props.prefill.host);
+    autoConnectTriggered = true;
+    // Use nextTick to ensure terminal container is ready
+    nextTick(() => doConnect());
+  }
+});
 
 // ---- 本地终端自动连接 ----
 
@@ -206,6 +201,10 @@ function readTerminalTheme(): { background: string; foreground: string; cursor: 
 }
 
 function ensureTerminalOpen(): void {
+  if (!termContainer.value) {
+    console.warn('[Terminal] termContainer not ready');
+    return;
+  }
   if (!term) createTerminal();
   term.open(termContainer.value);
   fitAddon.fit();
@@ -263,13 +262,23 @@ async function doConnect() {
   }
 
   // ---- SSH 远程连接 ----
-  if (!host.value || !username.value) {
+  // Use props.prefill directly to avoid race between autoConnect/prefill watchers
+  const cid = props.prefill?.id || connectionId.value;
+  const h = props.prefill?.host || host.value;
+  const u = props.prefill?.username || username.value;
+  const p = props.prefill?.port || port.value;
+
+  console.log('[Terminal] doConnect SSH', { host: h, username: u, id: cid });
+
+  if (!h || !u) {
     error.value = t('terminal.error.fillRequired');
+    console.warn('[Terminal] Missing host/username');
     return;
   }
 
-  if (!connectionId.value) {
+  if (!cid) {
     error.value = 'No connection ID — please select a saved host.';
+    console.warn('[Terminal] Missing connectionId');
     return;
   }
 
@@ -281,9 +290,20 @@ async function doConnect() {
   connectAttempts.value++;
   connecting.value = true;
   error.value = '';
+  showTimeoutTip.value = false;
+  statusLog.value = [{ step: 'start', detail: `Connecting to ${h}:${p}…` }];
 
+  // Show a slow-connection tip after 8 seconds if still waiting
+  connectTimeout = setTimeout(() => { showTimeoutTip.value = true }, 8000);
+
+  let unlistenSteps: (() => void) | null = null;
   try {
     ensureTerminalOpen();
+
+    unlistenSteps = await listen<{ step: string; detail: string }>('connect-step', (e) => {
+      console.log('[Terminal] connect-step:', e.payload);
+      statusLog.value.push({ step: e.payload.step, detail: e.payload.detail })
+    });
 
     unlisten = await listen<{ data: number[] }>('ssh-output', (event) => {
       if (term) {
@@ -304,21 +324,27 @@ async function doConnect() {
       }
     });
 
+    console.log('[Terminal] Invoking ssh_connect, cid:', cid);
     await invoke('ssh_connect', {
-      connectionId: connectionId.value,
+      connectionId: cid,
       rows: term.rows,
       cols: term.cols,
     });
+    console.log('[Terminal] ssh_connect returned OK');
 
     connected.value = true;
     connectAttempts.value = 0;
     emit('connection-change', true);
+    unlistenSteps?.();
 
     window.addEventListener('resize', () => fitAddon?.fit());
   } catch (e) {
+    console.error('[Terminal] connect error:', e);
+    unlistenSteps?.();
     error.value = `${t('terminal.error.connectFailed')}${e}`;
     cleanupTerminal();
   } finally {
+    clearTimeout(connectTimeout!);
     connecting.value = false;
   }
 }
@@ -336,6 +362,7 @@ async function disconnect() {
   }
   cleanupTerminal();
   connected.value = false;
+  autoConnectTriggered = false; // Reset for next auto-connect
   emit('connection-change', false);
 }
 
@@ -350,11 +377,13 @@ onUnmounted(() => {
 <style scoped>
 .terminal-wrapper {
   width: 100%;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   position: relative;
   display: flex;
   flex-direction: column;
   background: var(--color-bg-primary);
+  overflow: hidden;
 }
 
 /* ---- 欢迎页 ---- */
@@ -518,6 +547,23 @@ onUnmounted(() => {
   border-radius: 8px;
   border: 1px solid var(--color-border-tab);
 }
+
+.connect-sub { font-size: 13px; color: var(--color-text-secondary); margin: 0 0 16px; font-family: monospace; }
+
+/* ---- 连接日志 ---- */
+.connect-log { text-align: left; margin: 0 auto; max-width: 320px; }
+.log-line { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+.log-dot {
+  width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+  background: var(--color-text-tertiary);
+  animation: pulse 1s infinite;
+}
+.log-dot.dot-ok { background: var(--color-success); animation: none; }
+.log-dot.dot-err { background: var(--color-danger); animation: none; }
+.log-msg { font-size: 12px; color: var(--color-text-secondary); }
+.log-ok { color: var(--color-success); }
+.log-err { color: var(--color-danger); }
+.timeout-tip { margin: 12px 0 0; padding: 8px 12px; font-size: 11px; color: var(--color-text-secondary); background: var(--color-bg-secondary); border-radius: 4px; line-height: 1.5; }
 
 .connect-form h2 {
   margin-bottom: 24px;

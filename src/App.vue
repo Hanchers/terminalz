@@ -60,9 +60,19 @@ const activeTerminalId = ref<number | null>(null)
 let nextTabId = 1000
 
 function openHostTab(config: HostConfig) {
+  console.log('[App] openHostTab:', config);
   const existing = openTabs.value.find(t => t.id === config.id)
   if (existing) {
     activeTab.value = existing.id
+    // If not connected, trigger reconnect via TerminalView
+    if (!existing.connected && !existing.connecting) {
+      activeTerminalId.value = existing.id
+      // Force prefill update by creating a new tab reference
+      const idx = openTabs.value.findIndex(t => t.id === config.id)
+      if (idx >= 0) {
+        openTabs.value[idx] = { ...existing, connecting: true }
+      }
+    }
     return
   }
   const tab: TabInfo = {
@@ -74,6 +84,7 @@ function openHostTab(config: HostConfig) {
     connected: false,
     connecting: false,
   }
+  console.log('[App] creating tab:', tab);
   openTabs.value.push(tab)
   activeTab.value = tab.id
   activeTerminalId.value = tab.id

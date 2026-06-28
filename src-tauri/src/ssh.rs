@@ -56,6 +56,14 @@ impl SshState {
 
 // ---- 连接 ----
 
+#[derive(serde::Serialize, Clone)]
+struct ConnectStep { step: String, detail: String }
+
+fn emit(s: &str, d: &str, app: &AppHandle) {
+    debug!("connect-step: [{}] {}", s, d);
+    let _ = app.emit("connect-step", ConnectStep { step: s.to_string(), detail: d.to_string() });
+}
+
 pub async fn connect(
     state: &SshState,
     app_handle: AppHandle,
@@ -66,10 +74,10 @@ pub async fn connect(
     rows: u32,
     cols: u32,
 ) -> Result<()> {
-    // 如果已有连接，先断开
     disconnect(state).await.ok();
 
     debug!("SSH connect: {}@{}:{}  (pty {}x{})", username, host, port, cols, rows);
+    emit("tcp", &format!("Connecting to {}:{}...", host, port), &app_handle);
 
     let config = Arc::new(client::Config::default());
     let handler = ClientHandler;
@@ -80,6 +88,8 @@ pub async fn connect(
     let mut conn = None;
     for attempt in 1..=MAX_RETRIES {
         debug!("SSH TCP connect attempt {}/{}", attempt, MAX_RETRIES);
+        let msg = format!("TCP attempt {}/{}", attempt, MAX_RETRIES);
+        emit("tcp", &msg, &app_handle);
         match tokio::time::timeout(
             CONNECT_TIMEOUT,
             client::connect(config.clone(), (host.to_string(), port), handler.clone()),
@@ -88,15 +98,18 @@ pub async fn connect(
         {
             Ok(Ok(s)) => {
                 debug!("SSH TCP connected (attempt {})", attempt);
+                emit("tcp", "Connected", &app_handle);
                 conn = Some(s);
                 break;
             }
             Ok(Err(ref e)) if attempt < MAX_RETRIES => {
                 warn!("SSH TCP attempt {}/{} failed: {} — retrying...", attempt, MAX_RETRIES, e);
+                emit("tcp", &format!("Failed, retrying..."), &app_handle);
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             }
             Err(_) if attempt < MAX_RETRIES => {
                 warn!("SSH TCP attempt {}/{} timed out — retrying...", attempt, MAX_RETRIES);
+                emit("tcp", "Timed out, retrying...", &app_handle);
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             }
             Ok(Err(e)) => {
@@ -113,6 +126,7 @@ pub async fn connect(
     let mut session = conn.context("SSH connection failed")?;
 
     debug!("SSH authenticating as {}...", username);
+    emit("auth", &format!("Authenticating as {}...", username), &app_handle);
 
     // Try keyboard-interactive auth first (more compatible with PAM-based servers).
     // Falls back gracefully to simple password auth when the server doesn't use prompts.
@@ -179,7 +193,10 @@ pub async fn connect(
         }
     }
 
+    emit("auth", "Authenticated ✓", &app_handle);
+
     debug!("SSH opening channel...");
+    emit("channel", "Opening session channel...", &app_handle);
     let mut channel = session
         .channel_open_session()
         .await
@@ -187,6 +204,7 @@ pub async fn connect(
     debug!("SSH channel opened");
 
     debug!("SSH requesting PTY {}x{}", cols, rows);
+    emit("channel", "Allocating PTY...", &app_handle);
     channel
         .request_pty(true, "xterm-256color", cols, rows, 0, 0, &[])
         .await
@@ -194,11 +212,13 @@ pub async fn connect(
     debug!("SSH PTY allocated");
 
     debug!("SSH starting shell...");
+    emit("channel", "Starting shell...", &app_handle);
     channel
         .request_shell(false)
         .await
         .context("Failed to start shell")?;
     debug!("SSH shell started");
+    emit("done", "Connected ✓", &app_handle);
 
     // 创建命令通道
     let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<terminal::Command>();
@@ -330,19 +350,38 @@ pub(crate) async fn ssh_connect(
         .get_connection_internal(connection_id)
         .map_err(|e| format!("DB load failed: {}", e))?;
 
-    let password = match vault.load(connection_id, &config.password) {
-        Ok(p) => p,
-        Err(e) if config.password.starts_with("__KC__:") => {
-            // Legacy keychain-only reference lost — clear it and ask user to re-enter.
-            db.update_password(connection_id, "").ok();
-            return Err(format!(
-                "Keychain entry lost for this host — the stale reference has been cleared.\n\
-                 Right-click the host → Edit → enter the password → Save, then reconnect.\n\
-                 Original: {}",
-                e
-            ));
+    // If keychain is linked, use keychain credentials
+    let (username, password) = if config.keychain_id > 0 {
+        match db.get_ssh_key_internal(config.keychain_id) {
+            Ok(key) => {
+                let user = if key.username.is_empty() { config.username.clone() } else { key.username };
+                let pw = vault.load(connection_id, &key.password).unwrap_or_default();
+                (user, pw)
+            }
+            Err(_) => {
+                // Keychain entry lost, fall back to host's own password
+                let pw = match vault.load(connection_id, &config.password) {
+                    Ok(p) => p,
+                    Err(e) => return Err(format!("Vault load failed: {}", e)),
+                };
+                (config.username.clone(), pw)
+            }
         }
-        Err(e) => return Err(format!("Vault load failed: {}", e)),
+    } else {
+        let pw = match vault.load(connection_id, &config.password) {
+            Ok(p) => p,
+            Err(e) if config.password.starts_with("__KC__:") => {
+                db.update_password(connection_id, "").ok();
+                return Err(format!(
+                    "Keychain entry lost for this host — the stale reference has been cleared.\n\
+                     Right-click the host → Edit → enter the password → Save, then reconnect.\n\
+                     Original: {}",
+                    e
+                ));
+            }
+            Err(e) => return Err(format!("Vault load failed: {}", e)),
+        };
+        (config.username.clone(), pw)
     };
 
     connect(
@@ -350,7 +389,7 @@ pub(crate) async fn ssh_connect(
         app_handle,
         &config.host,
         config.port,
-        &config.username,
+        &username,
         &password,
         rows,
         cols,

@@ -95,6 +95,7 @@
       :host-dialog="hostDialog"
       :all-tags="allTags"
       :flat-group-options="flatGroupOptions"
+      :auto-keychains="autoKeychains"
       @save="saveHostDialog"
       @save-connect="saveConnectHost"
       @cancel="closeHostDialog"
@@ -149,7 +150,7 @@ import { useI18n } from 'vue-i18n'
 import { invoke } from '@tauri-apps/api/core'
 import { currentTheme, themes, setTheme } from '../themes/index'
 import { locales, saveLocale, type SupportedLocale } from '../i18n'
-import type { HostDialogState } from '../types'
+import type { HostDialogState, SshKey } from '../types'
 import TreeNode from './TreeNode.vue'
 import HostDialog from './HostDialog.vue'
 import GroupDialog from './GroupDialog.vue'
@@ -158,7 +159,7 @@ import TagDialog from './TagDialog.vue'
 const { t, locale } = useI18n({ useScope: 'global' })
 
 interface Group { id: number; parent_id: number; name: string; remark: string }
-interface Connection { id: number; name: string; host: string; port: number; username: string; password: string; group_id: number; remark: string }
+interface Connection { id: number; name: string; host: string; port: number; username: string; password: string; group_id: number; remark: string; auto_snippet_id: number; keychain_id: number }
 interface Tag { id: number; name: string; color: string }
 interface FlatOption { id: number; label: string; disabled?: boolean }
 interface CtxMenu { visible: boolean; x: number; y: number; type: string; id: number }
@@ -172,6 +173,7 @@ const activeMenu = ref('hosts')
 const selectedId = ref(0)
 const connections = ref<Connection[]>([])
 const groups = ref<Group[]>([])
+const autoKeychains = ref<SshKey[]>([])
 const collapsedGroups = ref(new Set<number>())
 const showAddMenu = ref(false)
 
@@ -189,7 +191,7 @@ const ctxMenu = reactive<CtxMenu>({ visible: false, x: 0, y: 0, type: '', id: 0 
 
 const hostDialog = reactive<HostDialogState>({
   visible: false, editingId: 0,
-  name: '', host: '', port: 22, username: '', password: '', groupId: 0, tagIds: [], remark: '', autoSnippetId: 0
+  name: '', host: '', port: 22, username: '', password: '', groupId: 0, tagIds: [], remark: '', autoSnippetId: 0, keychainId: 0
 })
 const hostDialogRef = ref<InstanceType<typeof HostDialog> | null>(null)
 const groupDialog = reactive<GroupDialog>({
@@ -211,13 +213,15 @@ onUnmounted(() => {
 
 async function loadAll(): Promise<void> {
   // Parallel loading: connections, groups, tags fetched concurrently
-  const [conns, grps, tags] = await Promise.all([
+  const [conns, grps, tags, keys] = await Promise.all([
     invoke<Connection[]>('list_connections').catch(() => [] as Connection[]),
     invoke<Group[]>('list_groups').catch(() => [] as Group[]),
     invoke<Tag[]>('list_tags').catch(() => [] as Tag[]),
+    invoke<SshKey[]>('list_ssh_keys').catch(() => [] as SshKey[]),
   ])
   connections.value = conns
   groups.value = grps
+  autoKeychains.value = keys
   allTags.value = tags
   // Batch load host tags (single query instead of N individual calls)
   try {
@@ -257,7 +261,9 @@ async function saveHostDialog(form: HostDialogState): Promise<void> {
       host: form.host, port: form.port,
       username: form.username, password: form.password,
       group_id: form.groupId,
-      remark: form.remark
+      remark: form.remark,
+      auto_snippet_id: form.autoSnippetId,
+      keychain_id: form.keychainId,
     }})
     await invoke('set_host_tags', { hostId: saved.id, tagIds: form.tagIds }).catch(() => {})
     closeHostDialog()
@@ -278,6 +284,8 @@ async function saveConnectHost(form: HostDialogState): Promise<void> {
       username: form.username, password: form.password,
       group_id: form.groupId,
       remark: form.remark,
+      auto_snippet_id: form.autoSnippetId,
+      keychain_id: form.keychainId,
     }})
     await invoke('set_host_tags', { hostId: saved.id, tagIds: form.tagIds }).catch(() => {})
     closeHostDialog()
@@ -321,7 +329,7 @@ async function openHostDialog(groupId = 0): Promise<void> {
   ctxMenu.visible = false
   Object.assign(hostDialog, {
     visible: true, editingId: 0, tagIds: [],
-    name: '', host: '', port: 22, username: '', password: '', groupId, remark: ''
+    name: '', host: '', port: 22, username: '', password: '', groupId, remark: '', autoSnippetId: 0, keychainId: 0
   })
 }
 
@@ -335,7 +343,7 @@ async function editHost(id: number): Promise<void> {
   Object.assign(hostDialog, {
     visible: true, editingId: c.id, tagIds,
     name: c.name || '', host: c.host, port: c.port || 22,
-    username: c.username, password: '', groupId: c.group_id || 0, remark: c.remark || ''
+    username: c.username, password: '', groupId: c.group_id || 0, remark: c.remark || '', autoSnippetId: c.auto_snippet_id || 0, keychainId: c.keychain_id || 0
   })
 }
 

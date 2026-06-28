@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS connections (
     group_id    INTEGER NOT NULL DEFAULT 0,          -- FK -> host_groups.id
     remark      TEXT NOT NULL DEFAULT '',            -- user notes
     auto_snippet_id INTEGER NOT NULL DEFAULT 0,      -- FK -> snippets.id (0=off)
+    keychain_id  INTEGER NOT NULL DEFAULT 0,          -- FK -> ssh_keys.id (0=none)
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );

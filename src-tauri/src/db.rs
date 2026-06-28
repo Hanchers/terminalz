@@ -25,6 +25,15 @@ impl DbState {
         )
         .context("Failed to initialize database schema")?;
 
+        // ---- Migrations: add columns that may be missing in existing databases ----
+        let migrations: &[&str] = &[
+            "ALTER TABLE connections ADD COLUMN auto_snippet_id INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE connections ADD COLUMN keychain_id INTEGER NOT NULL DEFAULT 0",
+        ];
+        for sql in migrations {
+            conn.execute(sql, []).ok(); // ignore "duplicate column" errors
+        }
+
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -37,7 +46,7 @@ impl DbState {
     pub fn list_all(&self) -> Result<Vec<ConnectionConfig>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
-            .prepare("SELECT id, name, host, port, username, password, group_id, remark, auto_snippet_id FROM connections ORDER BY updated_at DESC")?;
+            .prepare("SELECT id, name, host, port, username, password, group_id, remark, auto_snippet_id, keychain_id FROM connections ORDER BY updated_at DESC")?;
         let rows = stmt.query_map([], |row| {
             let raw: String = row.get(5)?;
             Ok(ConnectionConfig {
@@ -54,6 +63,7 @@ impl DbState {
                 group_id: row.get(6)?,
                 remark: row.get(7)?,
                 auto_snippet_id: row.get(8)?,
+                keychain_id: row.get(9)?,
             })
         })?;
         let mut list = Vec::new();
@@ -78,7 +88,7 @@ impl DbState {
     pub fn get_connection_internal(&self, id: i64) -> Result<ConnectionConfig> {
         let conn = self.conn.lock().unwrap();
         conn.query_row(
-            "SELECT id, name, host, port, username, password, group_id, remark, auto_snippet_id FROM connections WHERE id = ?",
+            "SELECT id, name, host, port, username, password, group_id, remark, auto_snippet_id, keychain_id FROM connections WHERE id = ?",
             [id],
             |row| {
                 Ok(ConnectionConfig {
@@ -91,6 +101,7 @@ impl DbState {
                     group_id: row.get(6)?,
                     remark: row.get(7)?,
                     auto_snippet_id: row.get(8)?,
+                    keychain_id: row.get(9)?,
                 })
             },
         ).map_err(|e| e.into())
@@ -110,14 +121,14 @@ impl DbState {
         let conn = self.conn.lock().unwrap();
         if config.id > 0 {
             conn.execute(
-                "UPDATE connections SET name=?, host=?, port=?, username=?, password=?, group_id=?, remark=?, auto_snippet_id=?, updated_at=datetime('now') WHERE id=?",
-                rusqlite::params![config.name, config.host, config.port as i64, config.username, config.password, config.group_id, config.remark, config.auto_snippet_id, config.id],
+                "UPDATE connections SET name=?, host=?, port=?, username=?, password=?, group_id=?, remark=?, auto_snippet_id=?, keychain_id=?, updated_at=datetime('now') WHERE id=?",
+                rusqlite::params![config.name, config.host, config.port as i64, config.username, config.password, config.group_id, config.remark, config.auto_snippet_id, config.keychain_id, config.id],
             )?;
             Ok(config.id)
         } else {
             conn.execute(
-                "INSERT INTO connections (name, host, port, username, password, group_id, remark, auto_snippet_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                rusqlite::params![config.name, config.host, config.port as i64, config.username, config.password, config.group_id, config.remark, config.auto_snippet_id],
+                "INSERT INTO connections (name, host, port, username, password, group_id, remark, auto_snippet_id, keychain_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                rusqlite::params![config.name, config.host, config.port as i64, config.username, config.password, config.group_id, config.remark, config.auto_snippet_id, config.keychain_id],
             )?;
             Ok(conn.last_insert_rowid())
         }

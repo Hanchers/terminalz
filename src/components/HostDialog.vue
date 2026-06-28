@@ -10,17 +10,23 @@
         <label>{{ $t('sidebar.hostDialog.host') }}</label>
         <input v-model="form.host" :placeholder="$t('sidebar.hostDialog.hostPlaceholder')" @keyup.enter="$emit('save', form)" />
       </div>
-      <div class="modal-row">
-        <div class="modal-field small">
+       <div class="modal-field small">
           <label>{{ $t('sidebar.hostDialog.port') }}</label>
           <input v-model.number="form.port" type="number" placeholder="22" />
         </div>
-        <div class="modal-field">
-          <label>{{ $t('sidebar.hostDialog.username') }}</label>
-          <input v-model="form.username" :placeholder="$t('sidebar.hostDialog.usernamePlaceholder')" @keyup.enter="$emit('save', form)" />
-        </div>
-      </div>
+      
       <div class="modal-field">
+        <label>{{ $t('sidebar.hostDialog.keychain') }}</label>
+        <select v-model="form.keychainId" @change="onKeychainSelect">
+          <option :value="0">{{ $t('sidebar.hostDialog.noKeychain') }}</option>
+          <option v-for="k in autoKeychains" :key="k.id" :value="k.id">{{ k.name }}</option>
+        </select>
+      </div>
+       <div class="modal-field">
+          <label>{{ $t('sidebar.hostDialog.username') }}</label>
+          <input v-model="form.username" :placeholder="$t('sidebar.hostDialog.usernamePlaceholder')" @keyup.enter="$emit('save', form)" :readonly="form.keychainId > 0" :class="{ 'input-readonly': form.keychainId > 0 }" />
+        </div>
+      <div class="modal-field" v-if="form.keychainId === 0">
         <label>{{ $t('sidebar.hostDialog.password') }}</label>
         <div class="password-wrap">
           <input
@@ -38,6 +44,10 @@
             </svg>
           </button>
         </div>
+      </div>
+      <div v-else class="modal-field">
+        <label>{{ $t('sidebar.hostDialog.password') }}</label>
+        <div class="keychain-info">{{ $t('sidebar.hostDialog.passwordFromKeychain') }}</div>
       </div>
       <div class="modal-field">
         <label>{{ $t('sidebar.hostDialog.remark') }}</label>
@@ -101,7 +111,7 @@
 import { ref, reactive, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { invoke } from '@tauri-apps/api/core'
-import type { Tag, FlatOption, Snippet, HostDialogState } from '../types'
+import type { Tag, FlatOption, Snippet, SshKey, HostDialogState } from '../types'
 
 const { t } = useI18n({ useScope: 'global' })
 
@@ -110,6 +120,7 @@ const props = defineProps<{
   allTags: Tag[]
   flatGroupOptions: FlatOption[]
   autoSnippets?: Snippet[]
+  autoKeychains?: SshKey[]
 }>()
 
 const emit = defineEmits<{
@@ -129,7 +140,7 @@ const newTag = reactive({ name: '', color: '#3fb950' })
 const form = reactive<HostDialogState>({
   visible: false, editingId: 0,
   name: '', host: '', port: 22, username: '', password: '',
-  groupId: 0, tagIds: [], remark: '', autoSnippetId: 0
+  groupId: 0, tagIds: [], remark: '', autoSnippetId: 0, keychainId: 0
 })
 
 // Sync prop → local form whenever dialog opens or data changes.
@@ -146,8 +157,21 @@ watch(() => props.hostDialog, (val) => {
     tagIds: [...val.tagIds],
     remark: val.remark,
     autoSnippetId: val.autoSnippetId,
+    keychainId: val.keychainId,
   })
 }, { immediate: true, deep: true })
+
+// When keychain is selected: auto-fill username, clear manual password
+// When unselected: restore original fields for manual input
+function onKeychainSelect() {
+  if (form.keychainId > 0 && props.autoKeychains) {
+    const k = props.autoKeychains.find(x => x.id === form.keychainId)
+    if (k) {
+      if (k.username) form.username = k.username
+      form.password = ''
+    }
+  }
+}
 
 // Allow parent to set connecting / error state.
 function setConnecting(v: boolean) { connecting.value = v }
@@ -206,4 +230,6 @@ async function saveQuickTag(): Promise<void> {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 .test-fail-row { margin: 6px 0 0; padding: 0; font-size: 12px; color: var(--color-danger); }
+.keychain-info { padding: 6px 0; font-size: 11px; color: var(--color-text-tertiary); }
+.input-readonly { background: var(--color-bg-secondary) !important; color: var(--color-text-secondary); cursor: not-allowed; }
 </style>

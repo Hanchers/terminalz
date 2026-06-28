@@ -43,6 +43,9 @@ export default {
       connecting: '连接中...',
       autoSnippet: '自动执行脚本',
       noAutoSnippet: '(不自动执行)',
+      keychain: '关联密钥库',
+      noKeychain: '(不使用密钥库)',
+      passwordFromKeychain: '密码由密钥库提供，连接时自动加载',
       save: '保存',
       cancel: '取消',
     },
@@ -109,6 +112,7 @@ export default {
       maxAttemptsSsh: 'SSH 连接失败已达 {n} 次上限，请检查网络和配置',
       saveFailed: '保存失败：',
       saved: '已保存 ✓',
+      connectingSlow: '连接时间超过预期，请检查防火墙、网络或远程主机状态...',
     },
   },
   status: {

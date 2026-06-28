@@ -45,6 +45,7 @@
         :all-tags="allTags"
         :flat-group-options="flatGroupOptions"
         :auto-snippets="autoSnippets"
+        :auto-keychains="autoKeychains"
         @save="saveHostDialog"
         @save-connect="saveConnectHost"
         @cancel="closeHostDialog"
@@ -70,7 +71,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { invoke } from '@tauri-apps/api/core'
 import { saveLocale, type SupportedLocale } from '../i18n'
-import type { Connection, Group, Tag, Snippet, FlatOption, HostDialogState } from '../types'
+import type { Connection, Group, Tag, Snippet, SshKey, FlatOption, HostDialogState } from '../types'
 import VaultSidebar from './VaultSidebar.vue'
 import HostsPanel from './HostsPanel.vue'
 import KeychainPanel from './KeychainPanel.vue'
@@ -93,6 +94,7 @@ const groups = ref<Group[]>([])
 const connections = ref<Connection[]>([])
 const allTags = ref<Tag[]>([])
 const autoSnippets = ref<Snippet[]>([])
+const autoKeychains = ref<SshKey[]>([])
 const hostTagsMap = ref<Record<number, Tag[]>>({})
 const currentGroup = ref(0)
 const ctxMenu = reactive<CtxMenu>({ visible: false, x: 0, y: 0, type: '', id: 0 })
@@ -124,7 +126,7 @@ const filteredConnections = computed(() => {
 })
 
 // ---- Dialogs ----
-const hostDialog = reactive<HostDialogState>({ visible: false, editingId: 0, name: '', host: '', port: 22, username: '', password: '', groupId: 0, tagIds: [], remark: '', autoSnippetId: 0 })
+const hostDialog = reactive<HostDialogState>({ visible: false, editingId: 0, name: '', host: '', port: 22, username: '', password: '', groupId: 0, tagIds: [], remark: '', autoSnippetId: 0, keychainId: 0 })
 const hostDialogRef = ref<InstanceType<typeof HostDialog> | null>(null)
 const groupDialog = reactive<GroupDialogState>({ visible: false, editingId: 0, name: '', parentId: 0, remark: '' })
 const tagDialog = reactive<TagDialogState>({ visible: false, name: '', color: '#3fb950' })
@@ -176,7 +178,7 @@ window.addEventListener('click', () => { ctxMenu.visible = false })
 // ---- Host CRUD ----
 function openHostDialog(groupId = 0) {
   ctxMenu.visible = false
-  Object.assign(hostDialog, { visible: true, editingId: 0, tagIds: [], name: '', host: '', port: 22, username: '', password: '', groupId, remark: '', autoSnippetId: 0 })
+  Object.assign(hostDialog, { visible: true, editingId: 0, tagIds: [], name: '', host: '', port: 22, username: '', password: '', groupId, remark: '', autoSnippetId: 0, keychainId: 0 })
 }
 async function editHost(id: number) {
   ctxMenu.visible = false
@@ -184,12 +186,12 @@ async function editHost(id: number) {
   if (!c) return
   let tagIds: number[] = []
   try { const tags = await invoke<Tag[]>('get_host_tags', { hostId: id }); tagIds = tags.map(t => t.id) } catch (_) {}
-  Object.assign(hostDialog, { visible: true, editingId: c.id, tagIds, name: c.name || '', host: c.host, port: c.port || 22, username: c.username, password: '', groupId: c.group_id || 0, remark: c.remark || '', autoSnippetId: c.auto_snippet_id || 0 })
+  Object.assign(hostDialog, { visible: true, editingId: c.id, tagIds, name: c.name || '', host: c.host, port: c.port || 22, username: c.username, password: '', groupId: c.group_id || 0, remark: c.remark || '', autoSnippetId: c.auto_snippet_id || 0, keychainId: c.keychain_id || 0 })
 }
 async function saveHostDialog(form: HostDialogState) {
   if (!form.host || !form.username) return
   try {
-    const saved = await invoke<{ id: number }>('save_connection', { config: { id: form.editingId, name: form.name || `${form.username}@${form.host}`, host: form.host, port: form.port, username: form.username, password: form.password, group_id: form.groupId, remark: form.remark, auto_snippet_id: form.autoSnippetId } })
+    const saved = await invoke<{ id: number }>('save_connection', { config: { id: form.editingId, name: form.name || `${form.username}@${form.host}`, host: form.host, port: form.port, username: form.username, password: form.password, group_id: form.groupId, remark: form.remark, auto_snippet_id: form.autoSnippetId, keychain_id: form.keychainId } })
     await invoke('set_host_tags', { hostId: saved.id, tagIds: form.tagIds }).catch(() => {})
     closeHostDialog()
     await loadAll()
@@ -199,7 +201,7 @@ async function saveConnectHost(form: HostDialogState) {
   if (!form.host || !form.username) return
   hostDialogRef.value?.setConnecting(true)
   try {
-    const saved = await invoke<{ id: number }>('save_connection', { config: { id: form.editingId, name: form.name || `${form.username}@${form.host}`, host: form.host, port: form.port, username: form.username, password: form.password, group_id: form.groupId, remark: form.remark, auto_snippet_id: form.autoSnippetId } })
+    const saved = await invoke<{ id: number }>('save_connection', { config: { id: form.editingId, name: form.name || `${form.username}@${form.host}`, host: form.host, port: form.port, username: form.username, password: form.password, group_id: form.groupId, remark: form.remark, auto_snippet_id: form.autoSnippetId, keychain_id: form.keychainId } })
     await invoke('set_host_tags', { hostId: saved.id, tagIds: form.tagIds }).catch(() => {})
     closeHostDialog()
     await loadAll()
@@ -233,13 +235,14 @@ function closeTagDialog() { tagDialog.visible = false }
 
 // ---- Data load ----
 async function loadAll() {
-  const [conns, grps, tags, snips] = await Promise.all([
+  const [conns, grps, tags, snips, keys] = await Promise.all([
     invoke<Connection[]>('list_connections').catch(() => [] as Connection[]),
     invoke<Group[]>('list_groups').catch(() => [] as Group[]),
     invoke<Tag[]>('list_tags').catch(() => [] as Tag[]),
     invoke<Snippet[]>('list_snippets').catch(() => [] as Snippet[]),
+    invoke<SshKey[]>('list_ssh_keys').catch(() => [] as SshKey[]),
   ])
-  connections.value = conns; groups.value = grps; allTags.value = tags; autoSnippets.value = snips
+  connections.value = conns; groups.value = grps; allTags.value = tags; autoSnippets.value = snips; autoKeychains.value = keys
   try {
     const ids = conns.map(c => c.id)
     if (ids.length > 0) {
